@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      1.7
+// @version      1.8 add back function
 // @match        https://10.231.132.118/*
 // @grant        none
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/main/ChartCheck-Hotkeys.user.js
@@ -186,6 +186,12 @@
             findButtons()
                 .find(b => b.textContent.trim() === 'Load Next Patient')
                 ?.click();
+        }
+
+        // Alt+Z = Previous patient
+        if (e.altKey && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            history.back();
         }
 
         // Alt+A = Approve and Load Next
