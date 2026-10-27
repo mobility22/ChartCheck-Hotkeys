@@ -3,8 +3,8 @@
 // @version      2.0
 // @match        https://10.231.132.118/*
 // @grant        none
-// @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/main/ChartCheck-Hotkeys.user.js
-// @updateURL    https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/main/ChartCheck-Hotkeys.user.js
+// @downloadURL https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
+// @updateURL   https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
 // ==/UserScript==
 
 (function () {
