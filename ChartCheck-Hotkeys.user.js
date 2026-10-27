@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      1.9
+// @version      2.0
 // @match        https://10.231.132.118/*
 // @grant        none
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/main/ChartCheck-Hotkeys.user.js
@@ -108,11 +108,11 @@
 
     function getTemplateSelects() {
         return findSelects().filter(s =>
-            Array.from(s.options).some(o =>
-                o.text === 'ROS_Standard' ||
-                o.text === 'ROS_SBRT/SRS'
-            )
-        );
+                                    Array.from(s.options).some(o =>
+                                                               o.text === 'ROS_Standard' ||
+                                                               o.text === 'ROS_SBRT/SRS'
+                                                              )
+                                   );
     }
 
     function clickButtonByText(text) {
@@ -176,7 +176,113 @@
 
         }, 500);
     }
+    let autoReviewActive = false;
 
+    function loadNextPatient() {
+        const btn = findButtons()
+        .find(b => b.textContent.trim() === 'Load Next Patient');
+
+        if (btn && !btn.disabled) {
+            btn.click();
+            return true;
+        }
+
+        return false;
+    }
+
+    async function waitForPatientChange(oldUrl, timeout = 5000) {
+        const start = Date.now();
+
+        while (Date.now() - start < timeout) {
+
+            if (location.href !== oldUrl) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+                return true;
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
+        return false;
+    }
+
+    async function reviewUntilFail() {
+
+        if (autoReviewActive) return;
+
+        autoReviewActive = true;
+
+        while (autoReviewActive) {
+
+            const fails = findFailLinks();
+
+            if (fails.length > 0) {
+                console.log('FAIL found');
+                fails[0].click();
+
+                autoReviewActive = false;
+                return;
+            }
+
+            const oldUrl = location.href;
+
+            console.log('No FAILs. Loading next patient...');
+
+            if (!loadNextPatient()) {
+                autoReviewActive = false;
+                return;
+            }
+
+            const changed = await waitForPatientChange(oldUrl);
+
+            if (!changed) {
+                console.log('Patient load timeout');
+                autoReviewActive = false;
+                return;
+            }
+        }
+    }
+
+    async function reviewUntilFailSlow(delay = 3000) {
+
+        if (autoReviewActive) return;
+
+        autoReviewActive = true;
+
+        console.log('Review mode started');
+
+        while (autoReviewActive) {
+
+            const fails = findFailLinks();
+
+            if (fails.length > 0) {
+                console.log('FAIL found');
+
+                fails[0].click();
+
+                autoReviewActive = false;
+                return;
+            }
+
+            // Give you time to visually review the chart
+            await new Promise(resolve => setTimeout(resolve, delay));
+
+            const oldUrl = location.href;
+
+            if (!loadNextPatient()) {
+                autoReviewActive = false;
+                return;
+            }
+
+            const changed = await waitForPatientChange(oldUrl);
+
+            if (!changed) {
+                console.log('Patient load timeout');
+                autoReviewActive = false;
+                return;
+            }
+        }
+    }
     document.addEventListener('keydown', e => {
 
         // Alt+S = Load Next Patient
@@ -199,7 +305,7 @@
             e.preventDefault();
 
             const btn = findButtons()
-                .find(b => b.textContent.trim() === 'Approve and Load Next');
+            .find(b => b.textContent.trim() === 'Approve and Load Next');
 
             if (btn && !btn.disabled) {
                 btn.click();
@@ -241,6 +347,27 @@
         if (e.altKey && e.key.toLowerCase() === 'w') {
             e.preventDefault();
             setTemplate('ROS_SBRT/SRS');
+        }
+
+        // Alt+C = Cruise mode (fast)
+        if (e.altKey && e.key.toLowerCase() === 'c') {
+            e.preventDefault();
+            reviewUntilFail();
+        }
+
+        // Alt+R = Review mode (slow)
+        if (e.altKey && e.key.toLowerCase() === 'r') {
+            e.preventDefault();
+            reviewUntilFailSlow(3000);
+        }
+
+        // Alt+X = Stop auto review
+        if (e.altKey && e.key.toLowerCase() === 'x') {
+            e.preventDefault();
+
+            autoReviewActive = false;
+
+            console.log('Auto review stopped');
         }
     });
 
