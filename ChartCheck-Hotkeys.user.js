@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      1.8
+// @version      1.81
 // @match        https://10.231.132.118/*
 // @grant        none
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/main/ChartCheck-Hotkeys.user.js
