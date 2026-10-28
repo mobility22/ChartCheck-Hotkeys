@@ -236,7 +236,7 @@
         if (e.altKey && e.key.toLowerCase() === 'f') findFailedUncheckedBoxes()[0]?.click();
         if (e.altKey && e.key.toLowerCase() === 'q') setTemplate('ROS_Standard');
         if (e.altKey && e.key.toLowerCase() === 'w') setTemplate('ROS_SBRT/SRS');
-        if (e.shiftlKey && e.key.toLowerCase() === 'q') setTemplate('RCO_Standard');
+        if (e.shiftKey && e.key.toLowerCase() === 'q') setTemplate('RCO_Standard');
         if (e.shiftKey && e.key.toLowerCase() === 'w') setTemplate('RCO_SBRT');
         if (e.altKey && e.key.toLowerCase() === 'c') reviewUntilFail();
         if (e.altKey && e.key.toLowerCase() === 'r') reviewUntilFailSlow(3000);
