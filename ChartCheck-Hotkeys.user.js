@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      2.1
+// @version      2.2
 // @match        https://10.231.132.118/*
 // @grant        none
 // @downloadURL https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -83,7 +83,7 @@
     }
 
     function getTemplateSelects() {
-        return findSelects().filter(s => Array.from(s.options).some(o => o.text === 'ROS_Standard' || o.text === 'ROS_SBRT/SRS'));
+        return findSelects().filter(s => Array.from(s.options).some(o => o.text === 'ROS_Standard' || o.text === 'ROS_SBRT/SRS' || o.text === 'RCO_SBRT' || o.text === 'RCO_Standard'));
     }
 
     function clickButtonByText(text) {
@@ -236,6 +236,8 @@
         if (e.altKey && e.key.toLowerCase() === 'f') findFailedUncheckedBoxes()[0]?.click();
         if (e.altKey && e.key.toLowerCase() === 'q') setTemplate('ROS_Standard');
         if (e.altKey && e.key.toLowerCase() === 'w') setTemplate('ROS_SBRT/SRS');
+        if (e.ctrlKey && e.key.toLowerCase() === 'q') setTemplate('RCO_Standard');
+        if (e.ctrlKey && e.key.toLowerCase() === 'w') setTemplate('RCO_SBRT');
         if (e.altKey && e.key.toLowerCase() === 'c') reviewUntilFail();
         if (e.altKey && e.key.toLowerCase() === 'r') reviewUntilFailSlow(3000);
         if (e.altKey && e.key.toLowerCase() === 'x') autoReviewActive = false;
