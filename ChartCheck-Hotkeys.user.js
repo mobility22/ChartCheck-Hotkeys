@@ -1,62 +1,212 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      2.3
+// @version      3.0
 // @match        https://10.231.132.118/*
 // @grant        none
-// @downloadURL https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
-// @updateURL   https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
+// @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
+// @updateURL    https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
 // ==/UserScript==
 
 (function () {
     'use strict';
 
-    function findButtons(root = document) {
-        let buttons = Array.from(root.querySelectorAll('button'));
-        root.querySelectorAll('*').forEach(el => {
-            if (el.shadowRoot) buttons.push(...findButtons(el.shadowRoot));
-        });
-        return buttons;
+    // ============================================================
+    // Configuration
+    // ============================================================
+
+    const CONFIG = {
+        patientLoadDelay: 1000,
+        patientChangeTimeout: 5000,
+        slowReviewDelay: 3000,
+        dialogPollMs: 250,
+        dialogTimeoutMs: 8000
+    };
+
+    // ============================================================
+    // State
+    // ============================================================
+
+    let autoReviewActive = false;
+    let busy = false;
+
+    // ============================================================
+    // Utilities
+    // ============================================================
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    function findPatientsSidebar(root = document) {
+    async function runLocked(fn) {
+        if (busy) return;
+
+        busy = true;
+
+        try {
+            await fn();
+        } finally {
+            busy = false;
+        }
+    }
+
+    function walkDom(root, callback) {
         for (const el of root.querySelectorAll('*')) {
-            if (el.tagName && el.tagName.toLowerCase() === 'patients-sidebar') {
-                return el;
-            }
+            callback(el);
+
             if (el.shadowRoot) {
-                const found = findPatientsSidebar(el.shadowRoot);
-                if (found) return found;
+                walkDom(el.shadowRoot, callback);
             }
         }
-        return null;
+    }
+
+    // ============================================================
+    // Status Overlay
+    // ============================================================
+
+    let overlay;
+
+    function createOverlay() {
+        overlay = document.createElement('div');
+
+        overlay.style.cssText = `
+            position:fixed;
+            bottom:10px;
+            right:10px;
+            z-index:999999;
+            background:rgba(0,0,0,0.85);
+            color:#00ff66;
+            font-family:monospace;
+            font-size:12px;
+            padding:8px;
+            border-radius:6px;
+            pointer-events:none;
+            min-width:160px;
+        `;
+
+        document.body.appendChild(overlay);
+        updateOverlay();
+    }
+
+    function updateOverlay() {
+        if (!overlay) return;
+
+        overlay.innerHTML = `
+            <b>ChartCheck</b><br>
+            Auto Review:
+            <span style="color:${autoReviewActive ? '#00ff66' : '#ff6666'}">
+                ${autoReviewActive ? 'ON' : 'OFF'}
+            </span>
+        `;
+    }
+
+    // ============================================================
+    // Generic Finders
+    // ============================================================
+
+    function findButtons(root = document) {
+        const results = [];
+
+        results.push(...root.querySelectorAll('button'));
+
+        walkDom(root, el => {
+            if (el.shadowRoot) {
+                results.push(...findButtons(el.shadowRoot));
+            }
+        });
+
+        return results;
     }
 
     function findSelects(root = document) {
-        let selects = Array.from(root.querySelectorAll('select'));
-        root.querySelectorAll('*').forEach(el => {
-            if (el.shadowRoot) selects.push(...findSelects(el.shadowRoot));
+        const results = [];
+
+        results.push(...root.querySelectorAll('select'));
+
+        walkDom(root, el => {
+            if (el.shadowRoot) {
+                results.push(...findSelects(el.shadowRoot));
+            }
         });
-        return selects;
+
+        return results;
     }
 
+    function findPatientsSidebar(root = document) {
+        let found = null;
+
+        walkDom(root, el => {
+            if (
+                !found &&
+                el.tagName &&
+                el.tagName.toLowerCase() === 'patients-sidebar'
+            ) {
+                found = el;
+            }
+        });
+
+        return found;
+    }
+
+    function findElementByText(text, root = document) {
+        let found = null;
+
+        walkDom(root, el => {
+            if (
+                !found &&
+                el.textContent &&
+                el.textContent.trim() === text
+            ) {
+                found = el;
+            }
+        });
+
+        return found;
+    }
+
+    function findAllTextMatches(text, root = document) {
+        const results = [];
+
+        walkDom(root, el => {
+            if (el.textContent?.includes(text)) {
+                results.push(el);
+            }
+        });
+
+        return results;
+    }
+
+    // ============================================================
+    // ChartCheck-Specific Finders
+    // ============================================================
+
     function findFailLinks(root = document) {
-        const links = [];
-        root.querySelectorAll('*').forEach(el => {
-            if (el.shadowRoot) links.push(...findFailLinks(el.shadowRoot));
+        const results = [];
+
+        walkDom(root, el => {
+            if (el.tagName?.toLowerCase() === 'a') {
+                if (el.querySelector('span[pass-state="FAIL"]')) {
+                    results.push(el);
+                }
+            }
         });
-        root.querySelectorAll('a').forEach(a => {
-            if (a.querySelector('span[pass-state="FAIL"]')) links.push(a);
-        });
-        return links;
+
+        return results;
     }
 
     function findUncheckedBoxes(root = document) {
-        let boxes = [];
-        root.querySelectorAll('*').forEach(el => {
-            if (el.classList && el.classList.contains('unchecked') && el.classList.contains('fa-square')) boxes.push(el);
-            if (el.shadowRoot) boxes.push(...findUncheckedBoxes(el.shadowRoot));
+        const results = [];
+
+        walkDom(root, el => {
+            if (
+                el.classList &&
+                el.classList.contains('unchecked') &&
+                el.classList.contains('fa-square')
+            ) {
+                results.push(el);
+            }
         });
-        return boxes;
+
+        return results;
     }
 
     function findFailedUncheckedBoxes() {
@@ -64,184 +214,271 @@
             try {
                 const host = box.parentElement.getRootNode().host;
                 const container = host.parentElement;
-                return container && container.innerHTML.includes('pass-state="FAIL"');
+
+                return (
+                    container &&
+                    container.innerHTML.includes('pass-state="FAIL"')
+                );
             } catch {
                 return false;
             }
         });
     }
 
-    function findElementByText(text, root = document) {
-        for (const el of root.querySelectorAll('*')) {
-            if (el.textContent.trim() === text) return el;
-            if (el.shadowRoot) {
-                const result = findElementByText(text, el.shadowRoot);
-                if (result) return result;
-            }
-        }
-        return null;
-    }
+    // ============================================================
+    // Template Handling
+    // ============================================================
 
     function getTemplateSelects() {
-        return findSelects().filter(s => Array.from(s.options).some(o => o.text === 'ROS_Standard' || o.text === 'ROS_SBRT/SRS' || o.text === 'RCO_SBRT' || o.text === 'RCO_Standard'));
+        const validTemplates = [
+            'ROS_Standard',
+            'ROS_SBRT/SRS',
+            'RCO_Standard',
+            'RCO_SBRT'
+        ];
+
+        return findSelects().filter(select =>
+            Array.from(select.options).some(option =>
+                validTemplates.includes(option.text)
+            )
+        );
     }
 
     function clickButtonByText(text) {
-        const btn = findButtons().find(b => b.textContent.trim() === text);
-        if (btn && !btn.disabled) {
-            btn.click();
-            return true;
+        const btn = findButtons().find(
+            button => button.textContent.trim() === text
+        );
+
+        if (!btn || btn.disabled) {
+            return false;
         }
-        return false;
+
+        btn.click();
+        return true;
     }
 
     function clickYesUpdate() {
         const timer = setInterval(() => {
-            const yesElement = findElementByText('Yes, update');
-            if (yesElement) {
-                yesElement.click();
+            const yes = findElementByText('Yes, update');
+
+            if (yes) {
+                yes.click();
                 clearInterval(timer);
             }
-        }, 250);
-        setTimeout(() => clearInterval(timer), 8000);
+        }, CONFIG.dialogPollMs);
+
+        setTimeout(() => {
+            clearInterval(timer);
+        }, CONFIG.dialogTimeoutMs);
     }
 
     function setTemplate(templateName) {
         const selects = getTemplateSelects();
+
         selects.forEach(select => {
-            const option = Array.from(select.options).find(o => o.text === templateName);
-            if (option) {
-                select.value = option.value;
-                select.dispatchEvent(new Event('change', { bubbles: true }));
-            }
+            const option = Array.from(select.options).find(
+                o => o.text === templateName
+            );
+
+            if (!option) return;
+
+            select.value = option.value;
+
+            select.dispatchEvent(
+                new Event('change', { bubbles: true })
+            );
         });
+
         setTimeout(() => {
-            if (clickButtonByText('Apply Check Templates Update')) clickYesUpdate();
+            if (clickButtonByText('Apply Check Templates Update')) {
+                clickYesUpdate();
+            }
         }, 500);
     }
 
-    let autoReviewActive = false;
-    function findAllTextMatches(text, root = document, results = []) {
+    // ============================================================
+    // Patient Navigation
+    // ============================================================
 
-        for (const el of root.querySelectorAll('*')) {
+    function scrollCurrentPatientIntoView() {
+        const sidebar = findPatientsSidebar();
 
-            if (el.textContent.includes(text)) {
-                results.push(el);
-            }
+        if (!sidebar) return;
 
-            if (el.shadowRoot) {
-                findAllTextMatches(text, el.shadowRoot, results);
-            }
-        }
+        const patientId = sidebar.getAttribute('currentpatientid');
 
-        return results;
+        if (!patientId) return;
+
+        const matches = findAllTextMatches(patientId);
+
+        const currentRow = matches.find(
+            el =>
+                el.tagName &&
+                el.tagName.toLowerCase() === 'li' &&
+                el.hasAttribute('current')
+        );
+
+        currentRow?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+        });
     }
 
     function loadNextPatient() {
-        const btn = findButtons().find(b => b.textContent.trim() === 'Load Next Patient');
-        if (btn && !btn.disabled) {
-            btn.click();
-            setTimeout(() => {
-                const sidebar = findPatientsSidebar();
-                if (sidebar) {
+        const button = findButtons().find(
+            b => b.textContent.trim() === 'Load Next Patient'
+        );
 
-                    const patientId = sidebar.getAttribute('currentpatientid');
-
-                    const matches = findAllTextMatches(patientId);
-
-                    const row = matches.find(el =>
-                                             el.tagName &&
-                                             el.tagName.toLowerCase() === 'li' &&
-                                             el.hasAttribute('current')
-                                            );
-
-                    if (row) {
-
-                        row.scrollIntoView({
-                            block: 'center',
-                            behavior: 'smooth'
-                        });
-                    }
-                }
-            }, 1000);
-            return true;
+        if (!button || button.disabled) {
+            return false;
         }
-        return false;
+
+        button.click();
+
+        setTimeout(
+            scrollCurrentPatientIntoView,
+            CONFIG.patientLoadDelay
+        );
+
+        return true;
     }
 
-    async function waitForPatientChange(oldUrl, timeout = 5000) {
+    async function waitForPatientChange(
+        oldUrl,
+        timeout = CONFIG.patientChangeTimeout
+    ) {
         const start = Date.now();
+
         while (Date.now() - start < timeout) {
             if (location.href !== oldUrl) {
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await sleep(300);
                 return true;
             }
-            await new Promise(resolve => setTimeout(resolve, 50));
+
+            await sleep(50);
         }
+
         return false;
     }
 
-    async function reviewUntilFail() {
-        if (autoReviewActive) return;
+    // ============================================================
+    // Auto Review
+    // ============================================================
+
+    async function reviewUntilFail(delay = 0) {
+        if (autoReviewActive) {
+            return;
+        }
+
         autoReviewActive = true;
-        while (autoReviewActive) {
-            const fails = findFailLinks();
-            if (fails.length > 0) {
-                fails[0].click();
-                autoReviewActive = false;
-                return;
+        updateOverlay();
+
+        try {
+            while (autoReviewActive) {
+                const fail = findFailLinks()[0];
+
+                if (fail) {
+                    fail.click();
+                    break;
+                }
+
+                if (delay > 0) {
+                    await sleep(delay);
+                }
+
+                const oldUrl = location.href;
+
+                if (!loadNextPatient()) {
+                    break;
+                }
+
+                const changed = await waitForPatientChange(oldUrl);
+
+                if (!changed) {
+                    break;
+                }
             }
-            const oldUrl = location.href;
-            if (!loadNextPatient()) return;
-            const changed = await waitForPatientChange(oldUrl);
-            if (!changed) {
-                autoReviewActive = false;
-                return;
-            }
+        } finally {
+            autoReviewActive = false;
+            updateOverlay();
         }
     }
 
-    async function reviewUntilFailSlow(delay = 3000) {
-        if (autoReviewActive) return;
-        autoReviewActive = true;
-        while (autoReviewActive) {
-            const fails = findFailLinks();
-            if (fails.length > 0) {
-                fails[0].click();
-                autoReviewActive = false;
-                return;
-            }
-            await new Promise(resolve => setTimeout(resolve, delay));
-            const oldUrl = location.href;
-            if (!loadNextPatient()) return;
-            const changed = await waitForPatientChange(oldUrl);
-            if (!changed) {
-                autoReviewActive = false;
-                return;
-            }
-        }
-    }
+    // ============================================================
+    // Hotkeys
+    // ============================================================
 
-    document.addEventListener('keydown', e => {
-        if (e.altKey && e.key.toLowerCase() === 's') {
+    function handleHotkeys(e) {
+        const key = e.key.toLowerCase();
+
+        if (e.altKey && key === 's') {
             e.preventDefault();
             loadNextPatient();
         }
-        if (e.altKey && e.key.toLowerCase() === 'z') history.back();
-        if (e.altKey && e.key.toLowerCase() === 'a') {
-            const btn = findButtons().find(b => b.textContent.trim() === 'Approve and Load Next');
-            if (btn && !btn.disabled) btn.click();
+
+        if (e.altKey && key === 'z') {
+            history.back();
         }
-        if (e.altKey && e.key.toLowerCase() === 'd') findFailLinks()[0]?.click();
-        if (e.altKey && e.key.toLowerCase() === 'f') findFailedUncheckedBoxes()[0]?.click();
-        if (e.altKey && e.key.toLowerCase() === 'q') setTemplate('ROS_Standard');
-        if (e.altKey && e.key.toLowerCase() === 'w') setTemplate('ROS_SBRT/SRS');
-        if (e.shiftKey && e.key.toLowerCase() === 'q') setTemplate('RCO_Standard');
-        if (e.shiftKey && e.key.toLowerCase() === 'w') setTemplate('RCO_SBRT');
-        if (e.altKey && e.key.toLowerCase() === 'c') reviewUntilFail();
-        if (e.altKey && e.key.toLowerCase() === 'r') reviewUntilFailSlow(3000);
-        if (e.altKey && e.key.toLowerCase() === 'x') autoReviewActive = false;
+
+        if (e.altKey && key === 'a') {
+            const button = findButtons().find(
+                b => b.textContent.trim() === 'Approve and Load Next'
+            );
+
+            if (button && !button.disabled) {
+                button.click();
+            }
+        }
+
+        if (e.altKey && key === 'd') {
+            findFailLinks()[0]?.click();
+        }
+
+        if (e.altKey && key === 'f') {
+            findFailedUncheckedBoxes()[0]?.click();
+        }
+
+        if (e.altKey && key === 'q') {
+            setTemplate('ROS_Standard');
+        }
+
+        if (e.altKey && key === 'w') {
+            setTemplate('ROS_SBRT/SRS');
+        }
+
+        if (e.shiftKey && key === 'q') {
+            setTemplate('RCO_Standard');
+        }
+
+        if (e.shiftKey && key === 'w') {
+            setTemplate('RCO_SBRT');
+        }
+
+        if (e.altKey && key === 'c') {
+            runLocked(() => reviewUntilFail());
+        }
+
+        if (e.altKey && key === 'r') {
+            runLocked(() =>
+                reviewUntilFail(CONFIG.slowReviewDelay)
+            );
+        }
+
+        if (e.altKey && key === 'x') {
+            autoReviewActive = false;
+            updateOverlay();
+        }
+    }
+
+    // ============================================================
+    // Init
+    // ============================================================
+
+    window.addEventListener('load', () => {
+        createOverlay();
     });
 
-    console.log('ChartCheck Hotkeys Loaded');
+    document.addEventListener('keydown', handleHotkeys);
+
+    console.log('ChartCheck Hotkeys v3.0 Loaded');
 })();
