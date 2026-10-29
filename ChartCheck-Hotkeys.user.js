@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.5
+// @version      3.6
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -437,7 +437,60 @@ if (
             updateOverlay();
         }
     }
+async function reviewApproveUntilFail(delay = 0) {
+    if (autoReviewActive) {
+        return;
+    }
 
+    autoReviewCount = 0;
+    autoReviewActive = true;
+    updateOverlay();
+
+    try {
+        while (autoReviewActive) {
+
+            // Stop at first FAIL
+            const fail = findFailLinks()[0];
+
+            if (fail) {
+                console.log(
+                    `Auto Approve stopped: FAIL found after ${autoReviewCount} charts`
+                );
+
+                fail.click();
+                break;
+            }
+
+            // Review delay
+            if (delay > 0) {
+                await sleep(delay);
+            }
+
+            // Approve if clean
+            const approveBtn = findButtons().find(
+                b => b.textContent.trim() === 'Approve and Load Next'
+            );
+
+            if (!approveBtn || approveBtn.disabled) {
+                console.log(
+                    `Auto Approve stopped: queue exhausted after ${autoReviewCount} charts`
+                );
+                break;
+            }
+
+            approveBtn.click();
+
+            autoReviewCount++;
+            updateOverlay();
+
+            // Wait for next chart to load
+            await sleep(1500);
+        }
+    } finally {
+        autoReviewActive = false;
+        updateOverlay();
+    }
+}
     // ============================================================
     // Hotkeys
     // ============================================================
@@ -491,7 +544,13 @@ if (
         if (e.altKey && key === 'c') {
             runLocked(() => reviewUntilFail());
         }
+if (e.ctrlKey && e.shiftKey && key === 'r') {
+    e.preventDefault();
 
+    runLocked(() =>
+        reviewApproveUntilFail(CONFIG.slowReviewDelay)
+    );
+}
         if (e.altKey && key === 'r') {
             runLocked(() =>
                 reviewUntilFail(CONFIG.slowReviewDelay)
