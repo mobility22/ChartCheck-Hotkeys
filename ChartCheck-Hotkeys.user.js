@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.2
+// @version      3.3
 // @match        https://10.231.132.118/*
 // @grant        none
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -387,12 +387,7 @@ updateOverlay();
         try {
 while (autoReviewActive) {
 
-    if (!canApproveAndLoadNext()) {
-        console.log(
-            `Auto Review stopped: queue exhausted after ${autoReviewCount} charts`
-        );
-        break;
-    }
+
 
     const fail = findFailLinks()[0];
 
@@ -423,6 +418,13 @@ if (!changed) {
 
 autoReviewCount++;
 updateOverlay();
+
+if (!canApproveAndLoadNext()) {
+    console.log(
+        `Auto Review stopped: queue exhausted after ${autoReviewCount} charts`
+    );
+    break;
+}
             }
         } finally {
             autoReviewActive = false;
@@ -506,5 +508,5 @@ updateOverlay();
 
     document.addEventListener('keydown', handleHotkeys);
 
-  console.log('ChartCheck Hotkeys v3.2 Loaded');
+  console.log('ChartCheck Hotkeys v3.3 Loaded');
 })();
