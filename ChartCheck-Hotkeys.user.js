@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.0
+// @version      3.1
 // @match        https://10.231.132.118/*
 // @grant        none
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -26,9 +26,10 @@
     // State
     // ============================================================
 
-    let autoReviewActive = false;
-    let busy = false;
-
+let autoReviewActive = false;
+let autoReviewCount = 0;
+let busy = false;
+    
     // ============================================================
     // Utilities
     // ============================================================
@@ -87,17 +88,18 @@
         updateOverlay();
     }
 
-    function updateOverlay() {
-        if (!overlay) return;
+function updateOverlay() {
+    if (!overlay) return;
 
-        overlay.innerHTML = `
-            <b>ChartCheck</b><br>
-            Auto Review:
-            <span style="color:${autoReviewActive ? '#00ff66' : '#ff6666'}">
-                ${autoReviewActive ? 'ON' : 'OFF'}
-            </span>
-        `;
-    }
+    overlay.innerHTML = `
+        <b>ChartCheck</b><br>
+        Auto Review:
+        <span style="color:${autoReviewActive ? '#00ff66' : '#ff6666'}">
+            ${autoReviewActive ? 'ON' : 'OFF'}
+        </span><br>
+        Count: ${autoReviewCount}
+    `;
+}
 
     // ============================================================
     // Generic Finders
@@ -370,8 +372,9 @@
             return;
         }
 
-        autoReviewActive = true;
-        updateOverlay();
+autoReviewCount = 0;
+autoReviewActive = true;
+updateOverlay();
 
         try {
             while (autoReviewActive) {
@@ -392,11 +395,14 @@
                     break;
                 }
 
-                const changed = await waitForPatientChange(oldUrl);
+const changed = await waitForPatientChange(oldUrl);
 
-                if (!changed) {
-                    break;
-                }
+if (!changed) {
+    break;
+}
+
+autoReviewCount++;
+updateOverlay();
             }
         } finally {
             autoReviewActive = false;
@@ -480,5 +486,5 @@
 
     document.addEventListener('keydown', handleHotkeys);
 
-    console.log('ChartCheck Hotkeys v3.0 Loaded');
+  console.log('ChartCheck Hotkeys v3.1 Loaded');
 })();
