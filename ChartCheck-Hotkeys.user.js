@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.4
+// @version      3.5
 // @match        https://10.231.132.118/*
-// @grant        none
+// @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
 // @updateURL    https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
 // ==/UserScript==
 
 (function () {
     'use strict';
-
+    const SCRIPT_VERSION = GM_info.script.version;
     // ============================================================
     // Configuration
     // ============================================================
@@ -93,7 +93,7 @@ function updateOverlay() {
     if (!overlay) return;
 
     overlay.innerHTML = `
-        <b>ChartCheck</b><br>
+        <b>ChartCheck v${SCRIPT_VERSION}</b><br>
         Auto Review:
         <span style="color:${autoReviewActive ? '#00ff66' : '#ff6666'}">
             ${autoReviewActive ? 'ON' : 'OFF'}
@@ -514,5 +514,5 @@ if (
 
     document.addEventListener('keydown', handleHotkeys);
 
-  console.log('ChartCheck Hotkeys v3.4 Loaded');
+console.log(`ChartCheck Hotkeys v${SCRIPT_VERSION} Loaded`);
 })();
