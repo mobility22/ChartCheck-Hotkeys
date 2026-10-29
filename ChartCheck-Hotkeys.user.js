@@ -506,5 +506,5 @@ updateOverlay();
 
     document.addEventListener('keydown', handleHotkeys);
 
-  console.log('ChartCheck Hotkeys v3.1 Loaded');
+  console.log('ChartCheck Hotkeys v3.2 Loaded');
 })();
