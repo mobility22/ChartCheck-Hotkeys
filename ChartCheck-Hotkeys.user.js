@@ -448,12 +448,11 @@ if (
 }
 
             }
+            }
         } finally {
-    autoReviewActive = false;
-    autoReviewMode = 'Review';
-    updateOverlay();
-}
-`
+            autoReviewActive = false;
+            autoReviewMode = 'Review';
+            updateOverlay();
         }
     }
 async function reviewApproveUntilFail(delay = 0) {
