@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.6
+// @version      3.7
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -28,6 +28,7 @@
 
 let autoReviewActive = false;
 let autoReviewCount = 0;
+let autoReviewMode = 'Review';
 let busy = false;
 const APPROVE_CHECK_INTERVAL = 5;
     
@@ -92,11 +93,25 @@ const APPROVE_CHECK_INTERVAL = 5;
 function updateOverlay() {
     if (!overlay) return;
 
+    const statusText =
+        !autoReviewActive
+            ? 'OFF'
+            : autoReviewMode === 'Approve'
+                ? 'APPROVE'
+                : 'ON';
+
+    const statusColor =
+        !autoReviewActive
+            ? '#ff6666'
+            : autoReviewMode === 'Approve'
+                ? '#ff4444'
+                : '#00ff66';
+
     overlay.innerHTML = `
         <b>ChartCheck v${SCRIPT_VERSION}</b><br>
         Auto Review:
-        <span style="color:${autoReviewActive ? '#00ff66' : '#ff6666'}">
-            ${autoReviewActive ? 'ON' : 'OFF'}
+        <span style="color:${statusColor}">
+            ${statusText}
         </span><br>
         Count: ${autoReviewCount}
     `;
@@ -382,6 +397,7 @@ function updateOverlay() {
         }
 
 autoReviewCount = 0;
+autoReviewMode = 'Review';
 autoReviewActive = true;
 updateOverlay();
 
@@ -433,8 +449,11 @@ if (
 
             }
         } finally {
-            autoReviewActive = false;
-            updateOverlay();
+    autoReviewActive = false;
+    autoReviewMode = 'Review';
+    updateOverlay();
+}
+`
         }
     }
 async function reviewApproveUntilFail(delay = 0) {
@@ -443,13 +462,13 @@ async function reviewApproveUntilFail(delay = 0) {
     }
 
     autoReviewCount = 0;
+    autoReviewMode = 'Approve';
     autoReviewActive = true;
     updateOverlay();
 
     try {
         while (autoReviewActive) {
 
-            // Stop at first FAIL
             const fail = findFailLinks()[0];
 
             if (fail) {
@@ -461,12 +480,10 @@ async function reviewApproveUntilFail(delay = 0) {
                 break;
             }
 
-            // Review delay
             if (delay > 0) {
                 await sleep(delay);
             }
 
-            // Approve if clean
             const approveBtn = findButtons().find(
                 b => b.textContent.trim() === 'Approve and Load Next'
             );
@@ -483,14 +500,15 @@ async function reviewApproveUntilFail(delay = 0) {
             autoReviewCount++;
             updateOverlay();
 
-            // Wait for next chart to load
             await sleep(1500);
         }
     } finally {
         autoReviewActive = false;
+        autoReviewMode = 'Review';
         updateOverlay();
     }
 }
+
     // ============================================================
     // Hotkeys
     // ============================================================
