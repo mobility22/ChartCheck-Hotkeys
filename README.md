@@ -13,10 +13,10 @@ Auto-review and auto-approve stop on a FAIL result. Both wait until the new char
 | Alt+A | Click **Approve and Load Next** once |
 | Alt+D | Open the first FAIL link |
 | Alt+F | Click the first failed unchecked box |
-| Alt+Q | Apply the `ROS_Standard` template |
-| Alt+W | Apply the `ROS_SBRT/SRS` template |
-| Shift+Q | Apply the `RCO_Standard` template |
-| Shift+W | Apply the `RCO_SBRT` template |
+| Alt+Q | Apply template 1 |
+| Alt+W | Apply template 2 |
+| Shift+Q | Apply template 3 |
+| Shift+W | Apply template 4 |
 | Alt+C | Start auto-review: load the next patient until a FAIL is found |
 | Alt+R | Start slow auto-review: same as Alt+C, but pause on each chart for it to finish loading before the FAIL check |
 | Ctrl+Shift+R | Start auto-approve after a confirm dialog. Repeatedly clicks **Approve and Load Next** until a FAIL is found, the queue is exhausted, the patient does not change, or you stop it. Press Ctrl+Shift+R again to stop without a second dialog |
