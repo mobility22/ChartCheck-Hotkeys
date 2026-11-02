@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.9
+// @version      3.10
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -326,6 +326,62 @@
     // Patient Navigation
     // ============================================================
 
+    function normalizeText(text) {
+        return (text || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function getCurrentPatientIdentity() {
+        const sidebar = findPatientsSidebar();
+        const id = normalizeText(sidebar?.getAttribute('currentpatientid') || '');
+        let name = '';
+
+        if (id) {
+            const currentRow = findAllTextMatches(id).find(
+                el =>
+                    el.tagName &&
+                    el.tagName.toLowerCase() === 'li' &&
+                    el.hasAttribute('current')
+            );
+
+            name = normalizeText(currentRow?.textContent || '');
+        } else if (sidebar) {
+            let currentRow = null;
+
+            walkDom(sidebar, el => {
+                if (
+                    !currentRow &&
+                    el.tagName &&
+                    el.tagName.toLowerCase() === 'li' &&
+                    el.hasAttribute('current')
+                ) {
+                    currentRow = el;
+                }
+            });
+
+            name = normalizeText(currentRow?.textContent || '');
+        }
+
+        return { id, name };
+    }
+
+    function hasPatientIdentity(identity) {
+        return !!(identity && (identity.id || identity.name));
+    }
+
+    function patientChanged(before, after) {
+        if (!hasPatientIdentity(after)) return false;
+
+        if (before?.id && after.id) {
+            return before.id !== after.id;
+        }
+
+        if (before?.name && after.name) {
+            return before.name !== after.name;
+        }
+
+        return !hasPatientIdentity(before);
+    }
+
     function scrollCurrentPatientIntoView() {
         const sidebar = findPatientsSidebar();
 
@@ -350,12 +406,16 @@
         });
     }
 
-    function loadNextPatient() {
+    function loadNextPatient(requireActive = false) {
         const button = findButtons().find(
             b => b.textContent.trim() === 'Load Next Patient'
         );
 
         if (!button || button.disabled) {
+            return false;
+        }
+
+        if (requireActive && !autoReviewActive) {
             return false;
         }
 
@@ -369,22 +429,59 @@
         return true;
     }
 
-    async function waitForPatientChange(
-        oldUrl,
+    async function waitForInitialPatientData(
+        timeout = CONFIG.patientChangeTimeout
+    ) {
+        const start = Date.now();
+        const initial = getCurrentPatientIdentity();
+
+        if (!autoReviewActive) return null;
+        if (hasPatientIdentity(initial)) return initial;
+
+        while (Date.now() - start < timeout) {
+            await sleep(50);
+            if (!autoReviewActive) return null;
+
+            const current = getCurrentPatientIdentity();
+
+            if (hasPatientIdentity(current)) {
+                await sleep(CONFIG.patientLoadDelay);
+                if (!autoReviewActive) return null;
+                return getCurrentPatientIdentity();
+            }
+        }
+
+        return null;
+    }
+
+    async function waitForPatientIdentityChange(
+        before,
         timeout = CONFIG.patientChangeTimeout
     ) {
         const start = Date.now();
 
         while (Date.now() - start < timeout) {
-            if (location.href !== oldUrl) {
-                await sleep(300);
-                return true;
+            if (!autoReviewActive) return null;
+
+            const current = getCurrentPatientIdentity();
+
+            if (patientChanged(before, current)) {
+                const seen = current;
+
+                await sleep(CONFIG.patientLoadDelay);
+                if (!autoReviewActive) return null;
+
+                const settled = getCurrentPatientIdentity();
+
+                if (patientChanged(before, settled)) return settled;
+                if (!hasPatientIdentity(settled)) return seen;
+                return null;
             }
 
             await sleep(50);
         }
 
-        return false;
+        return null;
     }
 
     // ============================================================
@@ -402,10 +499,23 @@
         updateOverlay();
 
         try {
+            const initialPatient = await waitForInitialPatientData();
+
+            if (!autoReviewActive || !initialPatient) {
+                return;
+            }
+
             while (autoReviewActive) {
+                if (delay > 0) {
+                    await sleep(delay);
+                    if (!autoReviewActive) break;
+                }
+
                 const fail = findFailLinks()[0];
 
                 if (fail) {
+                    if (!autoReviewActive) break;
+
                     console.log(
                         `Auto Review stopped: FAIL found after ${autoReviewCount} charts`
                     );
@@ -414,21 +524,20 @@
                     break;
                 }
 
-                if (delay > 0) {
-                    await sleep(delay);
-                }
+                const beforePatient = getCurrentPatientIdentity();
 
-                const oldUrl = location.href;
-
-                if (!loadNextPatient()) {
+                if (!autoReviewActive) break;
+                if (!loadNextPatient(true)) {
                     break;
                 }
 
-                const changed = await waitForPatientChange(oldUrl);
+                const nextPatient = await waitForPatientIdentityChange(beforePatient);
 
-                if (!changed) {
+                if (!autoReviewActive) break;
+                if (!nextPatient || !patientChanged(beforePatient, nextPatient)) {
                     break;
                 }
+
                 autoReviewCount++;
                 updateOverlay();
 
@@ -462,20 +571,29 @@
         updateOverlay();
 
         try {
+            const initialPatient = await waitForInitialPatientData();
+
+            if (!autoReviewActive || !initialPatient) {
+                return;
+            }
+
             while (autoReviewActive) {
+                if (delay > 0) {
+                    await sleep(delay);
+                    if (!autoReviewActive) break;
+                }
+
                 const fail = findFailLinks()[0];
 
                 if (fail) {
+                    if (!autoReviewActive) break;
+
                     console.log(
                         `Auto Approve stopped: FAIL found after ${autoReviewCount} charts`
                     );
 
                     fail.click();
                     break;
-                }
-
-                if (delay > 0) {
-                    await sleep(delay);
                 }
 
                 const approveBtn = findButtons().find(
@@ -489,12 +607,23 @@
                     break;
                 }
 
+                const beforePatient = getCurrentPatientIdentity();
+
+                if (!autoReviewActive) break;
                 approveBtn.click();
 
                 autoReviewCount++;
                 updateOverlay();
 
-                await sleep(1500);
+                const nextPatient = await waitForPatientIdentityChange(beforePatient);
+
+                if (!autoReviewActive) break;
+                if (!nextPatient || !patientChanged(beforePatient, nextPatient)) {
+                    console.log(
+                        `Auto Approve stopped: patient unchanged after ${autoReviewCount} charts`
+                    );
+                    break;
+                }
             }
         } finally {
             autoReviewActive = false;
@@ -507,7 +636,27 @@
     // Hotkeys
     // ============================================================
 
+    function isEditableTarget(node) {
+        if (!node || node.nodeType !== 1) return false;
+
+        const tag = node.tagName.toLowerCase();
+
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+            return true;
+        }
+
+        return !!node.isContentEditable;
+    }
+
     function handleHotkeys(e) {
+        if (e.repeat) return;
+
+        const path = typeof e.composedPath === 'function'
+            ? e.composedPath()
+            : [e.target];
+
+        if (path.some(isEditableTarget)) return;
+
         const key = e.key.toLowerCase();
 
         if (e.altKey && key === 's') {
@@ -516,6 +665,7 @@
         }
 
         if (e.altKey && key === 'z') {
+            e.preventDefault();
             history.back();
         }
 
