@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.8
+// @version      3.9
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -559,6 +559,18 @@
 
         if (e.ctrlKey && e.shiftKey && key === 'r') {
             e.preventDefault();
+
+            if (autoReviewActive) {
+                if (autoReviewMode === 'Approve') {
+                    autoReviewActive = false;
+                    updateOverlay();
+                }
+                return;
+            }
+
+            if (!confirm('Start auto-approve? This will repeatedly click Approve and Load Next. Press Ctrl+Shift+R again to stop.')) {
+                return;
+            }
 
             runLocked(() =>
                 reviewApproveUntilFail(CONFIG.slowReviewDelay)
