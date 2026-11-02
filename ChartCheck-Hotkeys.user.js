@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.10
+// @version      3.11
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -736,6 +736,28 @@
         if (e.altKey && key === 'x') {
             autoReviewActive = false;
             updateOverlay();
+        }
+
+        if (e.altKey && key === 'h') {
+            e.preventDefault();
+            alert(
+                'ChartCheck Hotkeys\n' +
+                '\n' +
+                'Alt+S — Load the next patient\n' +
+                'Alt+Z — Go back\n' +
+                'Alt+A — Click Approve and Load Next once\n' +
+                'Alt+D — Open the first FAIL link\n' +
+                'Alt+F — Click the first failed unchecked box\n' +
+                'Alt+Q — Apply the ROS_Standard template\n' +
+                'Alt+W — Apply the ROS_SBRT/SRS template\n' +
+                'Alt+C — Start auto-review: load the next patient until a FAIL is found\n' +
+                'Alt+R — Start slow auto-review: pause on each chart, then continue until a FAIL is found\n' +
+                'Alt+X — Stop auto-review or auto-approve immediately\n' +
+                'Shift+Q — Apply the RCO_Standard template\n' +
+                'Shift+W — Apply the RCO_SBRT template\n' +
+                'Ctrl+Shift+R — Start auto-approve after a confirm. Clicks Approve and Load Next until a FAIL, the queue ends, or the patient does not change. Press again to stop\n' +
+                'Alt+H — Show this help'
+            );
         }
     }
 
