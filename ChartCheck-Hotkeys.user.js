@@ -26,12 +26,12 @@
     // State
     // ============================================================
 
-let autoReviewActive = false;
-let autoReviewCount = 0;
-let autoReviewMode = 'Review';
-let busy = false;
-const APPROVE_CHECK_INTERVAL = 5;
-    
+    let autoReviewActive = false;
+    let autoReviewCount = 0;
+    let autoReviewMode = 'Review';
+    let busy = false;
+    const APPROVE_CHECK_INTERVAL = 5;
+
     // ============================================================
     // Utilities
     // ============================================================
@@ -90,24 +90,24 @@ const APPROVE_CHECK_INTERVAL = 5;
         updateOverlay();
     }
 
-function updateOverlay() {
-    if (!overlay) return;
+    function updateOverlay() {
+        if (!overlay) return;
 
-    const statusText =
-        !autoReviewActive
-            ? 'OFF'
-            : autoReviewMode === 'Approve'
-                ? 'APPROVE'
-                : 'ON';
+        const statusText =
+            !autoReviewActive
+                ? 'OFF'
+                : autoReviewMode === 'Approve'
+                    ? 'APPROVE'
+                    : 'ON';
 
-    const statusColor =
-        !autoReviewActive
-            ? '#ff6666'
-            : autoReviewMode === 'Approve'
-                ? '#ff4444'
-                : '#00ff66';
+        const statusColor =
+            !autoReviewActive
+                ? '#ff6666'
+                : autoReviewMode === 'Approve'
+                    ? '#ff4444'
+                    : '#00ff66';
 
-    overlay.innerHTML = `
+        overlay.innerHTML = `
         <b>ChartCheck v${SCRIPT_VERSION}</b><br>
         Auto Review:
         <span style="color:${statusColor}">
@@ -115,7 +115,7 @@ function updateOverlay() {
         </span><br>
         Count: ${autoReviewCount}
     `;
-}
+    }
 
     // ============================================================
     // Generic Finders
@@ -274,13 +274,13 @@ function updateOverlay() {
         btn.click();
         return true;
     }
-    
-    function canApproveAndLoadNext() {
-    const btn = findButtons().find(
-        b => b.textContent.trim() === 'Approve and Load Next'
-    );
 
-    return btn && !btn.disabled;
+    function canApproveAndLoadNext() {
+        const btn = findButtons().find(
+            b => b.textContent.trim() === 'Approve and Load Next'
+        );
+
+        return btn && !btn.disabled;
     }
 
     function clickYesUpdate() {
@@ -396,26 +396,23 @@ function updateOverlay() {
             return;
         }
 
-autoReviewCount = 0;
-autoReviewMode = 'Review';
-autoReviewActive = true;
-updateOverlay();
+        autoReviewCount = 0;
+        autoReviewMode = 'Review';
+        autoReviewActive = true;
+        updateOverlay();
 
         try {
-while (autoReviewActive) {
+            while (autoReviewActive) {
+                const fail = findFailLinks()[0];
 
+                if (fail) {
+                    console.log(
+                        `Auto Review stopped: FAIL found after ${autoReviewCount} charts`
+                    );
 
-
-    const fail = findFailLinks()[0];
-
-    if (fail) {
-        console.log(
-            `Auto Review stopped: FAIL found after ${autoReviewCount} charts`
-        );
-
-        fail.click();
-        break;
-    }
+                    fail.click();
+                    break;
+                }
 
                 if (delay > 0) {
                     await sleep(delay);
@@ -427,26 +424,25 @@ while (autoReviewActive) {
                     break;
                 }
 
-const changed = await waitForPatientChange(oldUrl);
+                const changed = await waitForPatientChange(oldUrl);
 
-if (!changed) {
-    break;
-}
-autoReviewCount++;
-updateOverlay();
+                if (!changed) {
+                    break;
+                }
+                autoReviewCount++;
+                updateOverlay();
 
-if (
-    autoReviewCount > 0 &&
-    autoReviewCount % APPROVE_CHECK_INTERVAL === 0
-) {
-    if (!canApproveAndLoadNext()) {
-        console.log(
-            `Auto Review stopped: queue exhausted after ${autoReviewCount} charts`
-        );
-        break;
-    }
-}
-
+                if (
+                    autoReviewCount > 0 &&
+                    autoReviewCount % APPROVE_CHECK_INTERVAL === 0
+                ) {
+                    if (!canApproveAndLoadNext()) {
+                        console.log(
+                            `Auto Review stopped: queue exhausted after ${autoReviewCount} charts`
+                        );
+                        break;
+                    }
+                }
             }
         } finally {
             autoReviewActive = false;
@@ -454,58 +450,58 @@ if (
             updateOverlay();
         }
     }
-async function reviewApproveUntilFail(delay = 0) {
-    if (autoReviewActive) {
-        return;
-    }
 
-    autoReviewCount = 0;
-    autoReviewMode = 'Approve';
-    autoReviewActive = true;
-    updateOverlay();
-
-    try {
-        while (autoReviewActive) {
-
-            const fail = findFailLinks()[0];
-
-            if (fail) {
-                console.log(
-                    `Auto Approve stopped: FAIL found after ${autoReviewCount} charts`
-                );
-
-                fail.click();
-                break;
-            }
-
-            if (delay > 0) {
-                await sleep(delay);
-            }
-
-            const approveBtn = findButtons().find(
-                b => b.textContent.trim() === 'Approve and Load Next'
-            );
-
-            if (!approveBtn || approveBtn.disabled) {
-                console.log(
-                    `Auto Approve stopped: queue exhausted after ${autoReviewCount} charts`
-                );
-                break;
-            }
-
-            approveBtn.click();
-
-            autoReviewCount++;
-            updateOverlay();
-
-            await sleep(1500);
+    async function reviewApproveUntilFail(delay = 0) {
+        if (autoReviewActive) {
+            return;
         }
-    } finally {
-        autoReviewActive = false;
-        autoReviewMode = 'Review';
+
+        autoReviewCount = 0;
+        autoReviewMode = 'Approve';
+        autoReviewActive = true;
         updateOverlay();
+
+        try {
+            while (autoReviewActive) {
+                const fail = findFailLinks()[0];
+
+                if (fail) {
+                    console.log(
+                        `Auto Approve stopped: FAIL found after ${autoReviewCount} charts`
+                    );
+
+                    fail.click();
+                    break;
+                }
+
+                if (delay > 0) {
+                    await sleep(delay);
+                }
+
+                const approveBtn = findButtons().find(
+                    b => b.textContent.trim() === 'Approve and Load Next'
+                );
+
+                if (!approveBtn || approveBtn.disabled) {
+                    console.log(
+                        `Auto Approve stopped: queue exhausted after ${autoReviewCount} charts`
+                    );
+                    break;
+                }
+
+                approveBtn.click();
+
+                autoReviewCount++;
+                updateOverlay();
+
+                await sleep(1500);
+            }
+        } finally {
+            autoReviewActive = false;
+            autoReviewMode = 'Review';
+            updateOverlay();
+        }
     }
-}
 
     // ============================================================
     // Hotkeys
@@ -560,13 +556,15 @@ async function reviewApproveUntilFail(delay = 0) {
         if (e.altKey && key === 'c') {
             runLocked(() => reviewUntilFail());
         }
-if (e.ctrlKey && e.shiftKey && key === 'r') {
-    e.preventDefault();
 
-    runLocked(() =>
-        reviewApproveUntilFail(CONFIG.slowReviewDelay)
-    );
-}
+        if (e.ctrlKey && e.shiftKey && key === 'r') {
+            e.preventDefault();
+
+            runLocked(() =>
+                reviewApproveUntilFail(CONFIG.slowReviewDelay)
+            );
+        }
+
         if (e.altKey && key === 'r') {
             runLocked(() =>
                 reviewUntilFail(CONFIG.slowReviewDelay)
@@ -589,5 +587,5 @@ if (e.ctrlKey && e.shiftKey && key === 'r') {
 
     document.addEventListener('keydown', handleHotkeys);
 
-console.log(`ChartCheck Hotkeys v${SCRIPT_VERSION} Loaded`);
+    console.log(`ChartCheck Hotkeys v${SCRIPT_VERSION} Loaded`);
 })();
