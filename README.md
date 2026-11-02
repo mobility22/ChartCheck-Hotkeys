@@ -1,6 +1,6 @@
 # ChartCheck Hotkeys
 
-Tampermonkey userscript (version 3.10) that adds keyboard shortcuts to ChartCheck at `https://10.231.132.118/*`. It loads the next patient, applies check templates, jumps to failed checks, and can walk the queue automatically. A small status overlay shows whether auto-review is off, on, or approving, plus how many charts the current run has advanced.
+Tampermonkey userscript (version 3.10) that adds keyboard shortcuts to ChartCheck. It loads the next patient, applies check templates, jumps to failed checks, and can walk the queue automatically. A small status overlay shows whether auto-review is off, on, or approving, plus how many charts the current run has advanced.
 
 Auto-review and auto-approve stop on a FAIL result. Both wait until the new chart's patient id (or patient name, when no id is available) has updated before they look for FAIL. Alt+X stops either loop immediately, before another Approve or Load Next click. Auto-approve stops instead of approving again when that id or name never changes. Shortcuts do nothing while you are typing in an input, textarea, select, or contenteditable field, and they ignore key auto-repeat.
 
@@ -24,8 +24,8 @@ Auto-review and auto-approve stop on a FAIL result. Both wait until the new char
 
 ## Install
 
-1. Install the [Tampermonkey](https://www.tampermonkey.net/) extension in your browser.
-2. Open the raw script, which is also the script's update URL: <https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js>
+1. Install the Tampermonkey extension in your browser.
+2. Open the raw script, which is also the script's update URL.
 3. Confirm **Install** in the Tampermonkey dialog.
 
-Tampermonkey then installs version 3.10 and picks up later updates from that URL. The script runs only on `https://10.231.132.118/*`.
+Tampermonkey then installs version 3.10 and picks up later updates from that raw script. The script runs only on the ChartCheck host it is matched to.
