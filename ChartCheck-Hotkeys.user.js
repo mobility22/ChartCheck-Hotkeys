@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.11
+// @version      3.12
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -79,9 +79,9 @@
             background:rgba(0,0,0,0.85);
             color:#00ff66;
             font-family:monospace;
-            font-size:12px;
-            padding:8px;
-            border-radius:6px;
+            font-size:20px;
+            padding:14px 28px;
+            border-radius:8px;
             pointer-events:none;
             min-width:160px;
         `;
