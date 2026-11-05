@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.12
+// @version      3.13
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -633,6 +633,397 @@
     }
 
     // ============================================================
+    // Actions
+    // Hotkeys and help-panel buttons call these same functions.
+    // ============================================================
+
+    function goBack() {
+        history.back();
+    }
+
+    function approveOnce() {
+        const button = findButtons().find(
+            b => b.textContent.trim() === 'Approve and Load Next'
+        );
+
+        if (button && !button.disabled) {
+            button.click();
+        }
+    }
+
+    function openFirstFail() {
+        findFailLinks()[0]?.click();
+    }
+
+    function clickFirstFailedUnchecked() {
+        findFailedUncheckedBoxes()[0]?.click();
+    }
+
+    function applyRosStandard() {
+        setTemplate('ROS_Standard');
+    }
+
+    function applyRosSbrt() {
+        setTemplate('ROS_SBRT/SRS');
+    }
+
+    function applyRcoStandard() {
+        setTemplate('RCO_Standard');
+    }
+
+    function applyRcoSbrt() {
+        setTemplate('RCO_SBRT');
+    }
+
+    function startAutoReview() {
+        runLocked(() => reviewUntilFail());
+    }
+
+    function startSlowAutoReview() {
+        runLocked(() =>
+            reviewUntilFail(CONFIG.slowReviewDelay)
+        );
+    }
+
+    function startAutoApprove() {
+        if (autoReviewActive) {
+            if (autoReviewMode === 'Approve') {
+                autoReviewActive = false;
+                updateOverlay();
+            }
+            return;
+        }
+
+        if (!confirm('Start auto-approve? This will repeatedly click Approve and Load Next. Press Ctrl+Shift+R again to stop.')) {
+            return;
+        }
+
+        runLocked(() =>
+            reviewApproveUntilFail(CONFIG.slowReviewDelay)
+        );
+    }
+
+    function stopAuto() {
+        autoReviewActive = false;
+        updateOverlay();
+    }
+
+    // ============================================================
+    // Help Panel
+    // ============================================================
+
+    let helpPanel;
+
+    const HELP_ACTIONS = [
+        {
+            name: 'Load the next patient',
+            button: 'S',
+            shortcut: 'Alt+S',
+            run: loadNextPatient
+        },
+        {
+            name: 'Go back',
+            button: 'Z',
+            shortcut: 'Alt+Z',
+            run: goBack
+        },
+        {
+            name: 'Click Approve and Load Next once',
+            button: 'A',
+            shortcut: 'Alt+A',
+            run: approveOnce
+        },
+        {
+            name: 'Open the first FAIL link',
+            button: 'D',
+            shortcut: 'Alt+D',
+            run: openFirstFail
+        },
+        {
+            name: 'Click the first failed unchecked box',
+            button: 'F',
+            shortcut: 'Alt+F',
+            run: clickFirstFailedUnchecked
+        },
+        {
+            name: 'Apply the ROS_Standard template',
+            button: 'Q',
+            shortcut: 'Alt+Q',
+            run: applyRosStandard
+        },
+        {
+            name: 'Apply the ROS_SBRT/SRS template',
+            button: 'W',
+            shortcut: 'Alt+W',
+            run: applyRosSbrt
+        },
+        {
+            name: 'Apply the RCO_Standard template',
+            button: '⇧Q',
+            shortcut: 'Shift+Q',
+            run: applyRcoStandard
+        },
+        {
+            name: 'Apply the RCO_SBRT template',
+            button: '⇧W',
+            shortcut: 'Shift+W',
+            run: applyRcoSbrt
+        },
+        {
+            name: 'Start auto-review: load the next patient until a FAIL is found',
+            button: 'C',
+            shortcut: 'Alt+C',
+            run: startAutoReview
+        },
+        {
+            name: 'Start slow auto-review: pause on each chart, then continue until a FAIL is found',
+            button: 'R',
+            shortcut: 'Alt+R',
+            run: startSlowAutoReview
+        },
+        {
+            name: 'Start auto-approve after a confirm. Clicks Approve and Load Next until a FAIL, the queue ends, or the patient does not change. Press again to stop',
+            button: '⌃⇧R',
+            shortcut: 'Ctrl+Shift+R',
+            run: startAutoApprove
+        },
+        {
+            name: 'Stop auto-review or auto-approve immediately',
+            button: 'X',
+            shortcut: 'Alt+X',
+            run: stopAuto
+        },
+        {
+            name: 'Show or hide help',
+            button: 'H',
+            shortcut: 'Alt+H',
+            run: toggleHelpPanel
+        }
+    ];
+
+    function orderedHelpActions() {
+        const actions = HELP_ACTIONS.filter(action => action.button !== 'H');
+
+        actions.sort((a, b) => a.name.localeCompare(b.name, 'en'));
+
+        const toggle = HELP_ACTIONS.find(action => action.button === 'H');
+
+        if (toggle) {
+            actions.push(toggle);
+        }
+
+        return actions;
+    }
+
+    function installHelpStyles() {
+        if (document.getElementById('chartcheck-help-style')) return;
+
+        const style = document.createElement('style');
+        style.id = 'chartcheck-help-style';
+        style.textContent = `
+            #chartcheck-help-panel {
+                position: fixed;
+                top: 12px;
+                left: 12px;
+                z-index: 1000000;
+                display: none;
+                flex-direction: column;
+                width: min(480px, calc(100vw - 24px));
+                max-height: calc(100vh - 24px);
+                background: rgba(0, 0, 0, 0.92);
+                color: #e6e6e6;
+                font-family: monospace;
+                font-size: 14px;
+                line-height: 1.35;
+                border: 1px solid #00ff66;
+                border-radius: 8px;
+                box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+                pointer-events: auto;
+                overflow: hidden;
+            }
+
+            #chartcheck-help-panel .chartcheck-help-title {
+                flex: 0 0 auto;
+                padding: 10px 14px;
+                background: #00ff66;
+                color: #04140c;
+                font-weight: bold;
+                font-size: 15px;
+                cursor: move;
+                user-select: none;
+                -webkit-user-select: none;
+            }
+
+            #chartcheck-help-panel .chartcheck-help-list {
+                overflow: auto;
+                pointer-events: auto;
+            }
+
+            #chartcheck-help-panel .chartcheck-help-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 7px 12px;
+                border-top: 1px solid rgba(0, 255, 102, 0.18);
+                pointer-events: auto;
+            }
+
+            #chartcheck-help-panel .chartcheck-help-name {
+                flex: 1 1 auto;
+                min-width: 0;
+            }
+
+            #chartcheck-help-panel .chartcheck-help-btn {
+                flex: 0 0 auto;
+                min-width: 4.6em;
+                margin: 0;
+                padding: 4px 8px;
+                font-family: monospace;
+                font-size: 14px;
+                font-weight: bold;
+                line-height: 1.2;
+                text-align: center;
+                color: #00ff66;
+                background: #101010;
+                border: 1px solid #00ff66;
+                border-radius: 4px;
+                cursor: pointer;
+                pointer-events: auto;
+            }
+
+            #chartcheck-help-panel .chartcheck-help-btn:hover,
+            #chartcheck-help-panel .chartcheck-help-btn:focus {
+                background: #00ff66;
+                color: #04140c;
+            }
+        `;
+
+        (document.head || document.documentElement).appendChild(style);
+    }
+
+    function helpIsOpen() {
+        if (!helpPanel) return false;
+
+        return window.getComputedStyle(helpPanel).display !== 'none';
+    }
+
+    function makeHelpDraggable(panel, handle) {
+        let dragging = false;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        function onMove(e) {
+            if (!dragging) return;
+
+            const maxLeft = Math.max(0, window.innerWidth - 48);
+            const maxTop = Math.max(0, window.innerHeight - 32);
+            const left = Math.min(Math.max(0, e.clientX - offsetX), maxLeft);
+            const top = Math.min(Math.max(0, e.clientY - offsetY), maxTop);
+
+            panel.style.left = left + 'px';
+            panel.style.top = top + 'px';
+            e.preventDefault();
+        }
+
+        function onUp() {
+            if (!dragging) return;
+
+            dragging = false;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+
+        window.addEventListener('blur', onUp);
+
+        handle.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+
+            const rect = panel.getBoundingClientRect();
+
+            offsetX = e.clientX - rect.left;
+            offsetY = e.clientY - rect.top;
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+            panel.style.left = rect.left + 'px';
+            panel.style.top = rect.top + 'px';
+            dragging = true;
+
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+            e.preventDefault();
+        });
+    }
+
+    function createHelpPanel() {
+        if (helpPanel || !document.body) return;
+
+        installHelpStyles();
+
+        const panel = document.createElement('div');
+        panel.id = 'chartcheck-help-panel';
+        panel.setAttribute('role', 'dialog');
+        panel.setAttribute('aria-label', 'ChartCheck Hotkeys');
+        panel.style.display = 'none';
+
+        const title = document.createElement('div');
+        title.className = 'chartcheck-help-title';
+        title.textContent = 'ChartCheck Hotkeys';
+
+        const list = document.createElement('div');
+        list.className = 'chartcheck-help-list';
+
+        orderedHelpActions().forEach(action => {
+            const row = document.createElement('div');
+            row.className = 'chartcheck-help-row';
+
+            const name = document.createElement('div');
+            name.className = 'chartcheck-help-name';
+            name.textContent = action.name;
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'chartcheck-help-btn';
+            button.textContent = action.button;
+            button.title = action.shortcut;
+            button.setAttribute('aria-label', action.name);
+
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                action.run();
+            });
+
+            row.appendChild(name);
+            row.appendChild(button);
+            list.appendChild(row);
+        });
+
+        panel.appendChild(title);
+        panel.appendChild(list);
+        panel.addEventListener('mousedown', (event) => event.stopPropagation());
+        panel.addEventListener('click', (event) => event.stopPropagation());
+        makeHelpDraggable(panel, title);
+
+        helpPanel = panel;
+        document.body.appendChild(panel);
+    }
+
+    function ensureHelpPanel() {
+        if (!helpPanel) {
+            createHelpPanel();
+        }
+    }
+
+    function toggleHelpPanel() {
+        ensureHelpPanel();
+
+        if (!helpPanel) return;
+
+        helpPanel.style.display = helpIsOpen() ? 'none' : 'flex';
+    }
+
+    // ============================================================
     // Hotkeys
     // ============================================================
 
@@ -659,6 +1050,8 @@
 
         const key = e.key.toLowerCase();
 
+        // Hotkeys always run, whether or not the help panel is open.
+
         if (e.altKey && key === 's') {
             e.preventDefault();
             loadNextPatient();
@@ -666,98 +1059,57 @@
 
         if (e.altKey && key === 'z') {
             e.preventDefault();
-            history.back();
+            goBack();
         }
 
         if (e.altKey && key === 'a') {
-            const button = findButtons().find(
-                b => b.textContent.trim() === 'Approve and Load Next'
-            );
-
-            if (button && !button.disabled) {
-                button.click();
-            }
+            approveOnce();
         }
 
         if (e.altKey && key === 'd') {
-            findFailLinks()[0]?.click();
+            openFirstFail();
         }
 
         if (e.altKey && key === 'f') {
-            findFailedUncheckedBoxes()[0]?.click();
+            clickFirstFailedUnchecked();
         }
 
         if (e.altKey && key === 'q') {
-            setTemplate('ROS_Standard');
+            applyRosStandard();
         }
 
         if (e.altKey && key === 'w') {
-            setTemplate('ROS_SBRT/SRS');
+            applyRosSbrt();
         }
 
         if (e.shiftKey && key === 'q') {
-            setTemplate('RCO_Standard');
+            applyRcoStandard();
         }
 
         if (e.shiftKey && key === 'w') {
-            setTemplate('RCO_SBRT');
+            applyRcoSbrt();
         }
 
         if (e.altKey && key === 'c') {
-            runLocked(() => reviewUntilFail());
+            startAutoReview();
         }
 
         if (e.ctrlKey && e.shiftKey && key === 'r') {
             e.preventDefault();
-
-            if (autoReviewActive) {
-                if (autoReviewMode === 'Approve') {
-                    autoReviewActive = false;
-                    updateOverlay();
-                }
-                return;
-            }
-
-            if (!confirm('Start auto-approve? This will repeatedly click Approve and Load Next. Press Ctrl+Shift+R again to stop.')) {
-                return;
-            }
-
-            runLocked(() =>
-                reviewApproveUntilFail(CONFIG.slowReviewDelay)
-            );
+            startAutoApprove();
         }
 
         if (e.altKey && key === 'r') {
-            runLocked(() =>
-                reviewUntilFail(CONFIG.slowReviewDelay)
-            );
+            startSlowAutoReview();
         }
 
         if (e.altKey && key === 'x') {
-            autoReviewActive = false;
-            updateOverlay();
+            stopAuto();
         }
 
         if (e.altKey && key === 'h') {
             e.preventDefault();
-            alert(
-                'ChartCheck Hotkeys\n' +
-                '\n' +
-                'Alt+S — Load the next patient\n' +
-                'Alt+Z — Go back\n' +
-                'Alt+A — Click Approve and Load Next once\n' +
-                'Alt+D — Open the first FAIL link\n' +
-                'Alt+F — Click the first failed unchecked box\n' +
-                'Alt+Q — Apply the ROS_Standard template\n' +
-                'Alt+W — Apply the ROS_SBRT/SRS template\n' +
-                'Alt+C — Start auto-review: load the next patient until a FAIL is found\n' +
-                'Alt+R — Start slow auto-review: pause on each chart, then continue until a FAIL is found\n' +
-                'Alt+X — Stop auto-review or auto-approve immediately\n' +
-                'Shift+Q — Apply the RCO_Standard template\n' +
-                'Shift+W — Apply the RCO_SBRT template\n' +
-                'Ctrl+Shift+R — Start auto-approve after a confirm. Clicks Approve and Load Next until a FAIL, the queue ends, or the patient does not change. Press again to stop\n' +
-                'Alt+H — Show this help'
-            );
+            toggleHelpPanel();
         }
     }
 
@@ -767,6 +1119,7 @@
 
     window.addEventListener('load', () => {
         createOverlay();
+        ensureHelpPanel();
     });
 
     document.addEventListener('keydown', handleHotkeys);
