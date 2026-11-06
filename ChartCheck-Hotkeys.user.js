@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.15
+// @version      3.16
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -813,18 +813,44 @@
         }
     ];
 
+    // Fixed 2-column reading order. Help stays last and spans that row.
+    // Next | Approve
+    // Auto-approve | Nonstop review
+    // Slow review | Review
+    // ROS Standard | ROS SBRT
+    // RCO Standard | RCO SBRT
+    // Fail link | Fail box
+    // Back | Stop
+    // Help
     function orderedHelpActions() {
-        const actions = HELP_ACTIONS.filter(action => action.button !== 'H');
+        const buttonOrder = [
+            'S',
+            'A',
+            '⌃⇧R',
+            'E',
+            'R',
+            'C',
+            'Q',
+            'W',
+            '⇧Q',
+            '⇧W',
+            'D',
+            'F',
+            'Z',
+            'X',
+            'H'
+        ];
+        const byButton = new Map(HELP_ACTIONS.map(action => [action.button, action]));
 
-        actions.sort((a, b) => a.name.localeCompare(b.name, 'en'));
+        return buttonOrder.map(button => {
+            const action = byButton.get(button);
 
-        const toggle = HELP_ACTIONS.find(action => action.button === 'H');
+            if (!action) {
+                throw new Error('Missing help action for button ' + button);
+            }
 
-        if (toggle) {
-            actions.push(toggle);
-        }
-
-        return actions;
+            return action;
+        });
     }
 
     function installPanelStyles() {
