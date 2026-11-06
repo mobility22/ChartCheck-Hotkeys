@@ -1,12 +1,14 @@
 # ChartCheck Hotkeys
 
-Tampermonkey userscript (version 3.22) that adds keyboard shortcuts to ChartCheck. It loads the next patient, applies check templates, jumps to failed checks, and can walk the queue automatically. One floating window shows the version as its title, the hotkey list, and auto-review status. The list is always shown with the window. There is no collapsed title and status strip. Alt+L, the Hide button beside Stop, or LDH on the title hides that full window and shows it again the same way. While it is hidden, nothing from this script is visible.
+Tampermonkey userscript (version 3.23) that adds keyboard shortcuts to ChartCheck. It loads the next patient, applies check templates, jumps to failed checks, and can walk the queue automatically. One floating window shows the version as its title, the hotkey list, and auto-review status. The list is always shown with the window. There is no collapsed title and status strip. Alt+L, the Hide button beside Stop, or LDH on the title hides that full window and shows it again the same way. While it is hidden, nothing from this script is visible.
 
 Auto-review and auto-approve stop on a FAIL result and open that FAIL link. Alt+E is slow nonstop review: it pauses on each chart for the same interval as Alt+R, then loads the next patient when the chart has a FAIL, and leaves the FAIL link unopened. It stops when the queue ends, the patient does not change, or you press Alt+X. These loops wait until the new chart's patient id (or patient name, when no id is available) has updated before they look for FAIL. Alt+X stops any of them immediately, before another Approve or Load Next click. Auto-approve stops instead of approving again when that id or name never changes. Shortcuts do nothing while you are typing in an input, textarea, select, or contenteditable field, and they ignore key auto-repeat. The hotkey list is a compact two-column grid in that same window. Each action has a keyword label and a letter button. Drag the version title to move the window.
 
 The line under the patient name is the center, such as "Roseville Cancer Center, ROS Radiation Oncology, …" or "Rancho Cordova Cancer Center, RCO Radiation Oncology, …". The script reads that line and matches the words Roseville and Rancho. It does not treat the ROS or RCO department abbreviation as the site. On a Roseville center, the RCO Standard and RCO SBRT letter buttons are grayed. On a Rancho center, the ROS Standard and ROS SBRT letter buttons are grayed. Any other center leaves all four buttons at full strength. Gray is visual only: those letter buttons still click, and Alt+Q, Alt+W, Shift+Q, and Shift+W still run.
 
 Auto-review and auto-approve show Roseville Count and Rancho Count instead of one combined count. Each chart is counted for the center line on screen before the next patient loads. A center line that is neither Roseville nor Rancho is not added to either count. Both counts reset to zero when a new auto-review or auto-approve run starts.
+
+When a new current patient's name is shown in the chart banner, the script copies that name once for pasting into ARIA. The copied text is the banner name for that patient id, without the id, the center line, or a date of birth, and with only surrounding whitespace removed. It does not copy a banner that still belongs to the previous patient, and it does not copy again while the same patient stays on screen. Copy Name on the panel copies the current name again. That button is also the fallback when the clipboard is not available. The panel says Name copied only after the write succeeds. Otherwise it says Copy failed, or No name when the banner name is not available. The name itself is not shown in the panel and is not logged.
 
 ## Hotkeys
 
@@ -34,4 +36,4 @@ Auto-review and auto-approve show Roseville Count and Rancho Count instead of on
 2. Open the raw script, which is also the script's update URL.
 3. Confirm **Install** in the Tampermonkey dialog.
 
-Tampermonkey then installs version 3.22 and picks up later updates from that raw script. The script runs only on the ChartCheck host it is matched to.
+Tampermonkey then installs version 3.23 and picks up later updates from that raw script. The script runs only on the ChartCheck host it is matched to.
