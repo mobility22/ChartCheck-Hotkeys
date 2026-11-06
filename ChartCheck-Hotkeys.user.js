@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.20
+// @version      3.21
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -28,6 +28,8 @@
 
     let autoReviewActive = false;
     let autoReviewCount = 0;
+    let rosevilleReviewCount = 0;
+    let ranchoReviewCount = 0;
     let autoReviewMode = 'Review';
     let busy = false;
     const APPROVE_CHECK_INTERVAL = 5;
@@ -65,16 +67,16 @@
     // ============================================================
     // Floating window
     // One panel: version title, hotkey list, then status.
-    // It starts hidden so the collapsed title/status strip is not
-    // left on the chart. Alt+L or LDH opens the full panel with the
-    // hotkey list expanded, and hides it again. While it is hidden,
+    // It starts visible with the hotkey list expanded, not as the
+    // collapsed title/status strip. Alt+L or LDH hides that full
+    // panel and shows it again the same way. While it is hidden,
     // nothing from this script is visible.
     // ============================================================
 
     let panel;
     let statusEl;
     let helpList;
-    let panelHidden = true;
+    let panelHidden = false;
 
     function updateOverlay() {
         if (!statusEl) return;
@@ -97,7 +99,28 @@
             'Auto Review: ' +
             '<span style="color:' + statusColor + '">' +
             statusText +
-            '</span><br>Count: ' + autoReviewCount;
+            '</span><br>Roseville Count: ' + rosevilleReviewCount +
+            '<br>Rancho Count: ' + ranchoReviewCount;
+    }
+
+    function resetReviewCounts() {
+        autoReviewCount = 0;
+        rosevilleReviewCount = 0;
+        ranchoReviewCount = 0;
+    }
+
+    // autoReviewCount stays the total, including charts whose center
+    // line is neither Roseville nor Rancho. Those unknown charts are
+    // not added to either site count. The total is what the every-fifth
+    // queue check and the stop logs already use.
+    function recordReviewedChart(site) {
+        autoReviewCount++;
+
+        if (site === 'roseville') {
+            rosevilleReviewCount++;
+        } else if (site === 'rancho') {
+            ranchoReviewCount++;
+        }
     }
 
     // ============================================================
@@ -640,7 +663,7 @@
 
         const continueOnFail = options.continueOnFail === true;
 
-        autoReviewCount = 0;
+        resetReviewCounts();
         autoReviewMode = continueOnFail ? 'Nonstop' : 'Review';
         autoReviewActive = true;
         updateOverlay();
@@ -678,6 +701,7 @@
                 }
 
                 const beforePatient = getCurrentPatientIdentity();
+                const reviewedSite = detectPatientSite();
 
                 if (!autoReviewActive) break;
                 if (!loadNextPatient(true)) {
@@ -691,7 +715,7 @@
                     break;
                 }
 
-                autoReviewCount++;
+                recordReviewedChart(reviewedSite);
                 updateOverlay();
 
                 if (
@@ -722,7 +746,7 @@
             return;
         }
 
-        autoReviewCount = 0;
+        resetReviewCounts();
         autoReviewMode = 'Approve';
         autoReviewActive = true;
         updateOverlay();
@@ -765,11 +789,12 @@
                 }
 
                 const beforePatient = getCurrentPatientIdentity();
+                const reviewedSite = detectPatientSite();
 
                 if (!autoReviewActive) break;
                 approveBtn.click();
 
-                autoReviewCount++;
+                recordReviewedChart(reviewedSite);
                 updateOverlay();
 
                 const nextPatient = await waitForPatientIdentityChange(beforePatient);
@@ -1052,12 +1077,12 @@
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                gap: 12px;
-                padding: 8px 14px;
+                gap: 14px;
+                padding: 9px 16px;
                 background: #00ff66;
                 color: #04140c;
                 font-weight: bold;
-                font-size: 18px;
+                font-size: 21px;
                 line-height: 1.2;
                 white-space: nowrap;
                 cursor: move;
@@ -1069,9 +1094,9 @@
             #chartcheck-panel .chartcheck-ldh {
                 flex: 0 0 auto;
                 margin: 0;
-                padding: 0 6px;
+                padding: 0 7px;
                 font-family: monospace;
-                font-size: 12px;
+                font-size: 14px;
                 font-weight: bold;
                 line-height: 1.4;
                 color: #04140c;
@@ -1091,11 +1116,11 @@
             #chartcheck-panel .chartcheck-help-list {
                 display: none;
                 grid-template-columns: max-content max-content;
-                max-height: calc(100vh - 180px);
+                max-height: calc(100vh - 210px);
                 overflow: auto;
                 color: #e6e6e6;
-                font-size: 11px;
-                line-height: 1.15;
+                font-size: 13px;
+                line-height: 1.2;
                 pointer-events: auto;
             }
 
@@ -1105,8 +1130,8 @@
 
             #chartcheck-panel .chartcheck-status {
                 flex: 0 0 auto;
-                padding: 12px 16px;
-                font-size: 20px;
+                padding: 14px 18px;
+                font-size: 23px;
                 line-height: 1.3;
                 white-space: nowrap;
                 border-top: 1px solid rgba(0, 255, 102, 0.45);
@@ -1117,8 +1142,8 @@
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                gap: 6px;
-                padding: 1px 6px;
+                gap: 7px;
+                padding: 2px 7px;
                 border-top: 1px solid rgba(0, 255, 102, 0.18);
                 pointer-events: auto;
             }
@@ -1137,9 +1162,9 @@
                 flex: 0 0 auto;
                 min-width: 3.4em;
                 margin: 0;
-                padding: 0 4px;
+                padding: 1px 5px;
                 font-family: monospace;
-                font-size: 11px;
+                font-size: 13px;
                 font-weight: bold;
                 line-height: 1.35;
                 text-align: center;
@@ -1252,10 +1277,10 @@
 
         const root = document.createElement('div');
         root.id = 'chartcheck-panel';
-        root.classList.add('chartcheck-hidden');
+        root.classList.add('chartcheck-expanded');
         root.setAttribute('role', 'dialog');
         root.setAttribute('aria-label', 'ChartCheck Hotkeys');
-        root.setAttribute('aria-hidden', 'true');
+        root.setAttribute('aria-hidden', 'false');
 
         const title = document.createElement('div');
         title.className = 'chartcheck-title';
@@ -1287,7 +1312,7 @@
 
         const list = document.createElement('div');
         list.className = 'chartcheck-help-list';
-        list.setAttribute('aria-hidden', 'true');
+        list.setAttribute('aria-hidden', 'false');
 
         orderedHelpActions().forEach(action => {
             const row = document.createElement('div');
