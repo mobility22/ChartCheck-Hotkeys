@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.13
+// @version      3.14
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -93,19 +93,19 @@
     function updateOverlay() {
         if (!overlay) return;
 
-        const statusText =
-            !autoReviewActive
-                ? 'OFF'
-                : autoReviewMode === 'Approve'
-                    ? 'APPROVE'
-                    : 'ON';
+        let statusText = 'ON';
+        let statusColor = '#00ff66';
 
-        const statusColor =
-            !autoReviewActive
-                ? '#ff6666'
-                : autoReviewMode === 'Approve'
-                    ? '#ff4444'
-                    : '#00ff66';
+        if (!autoReviewActive) {
+            statusText = 'OFF';
+            statusColor = '#ff6666';
+        } else if (autoReviewMode === 'Approve') {
+            statusText = 'APPROVE';
+            statusColor = '#ff4444';
+        } else if (autoReviewMode === 'Nonstop') {
+            statusText = 'NONSTOP';
+            statusColor = '#66ccff';
+        }
 
         overlay.innerHTML = `
         <b>ChartCheck v${SCRIPT_VERSION}</b><br>
@@ -488,13 +488,15 @@
     // Auto Review
     // ============================================================
 
-    async function reviewUntilFail(delay = 0) {
+    async function reviewUntilFail(delay = 0, options = {}) {
         if (autoReviewActive) {
             return;
         }
 
+        const continueOnFail = options.continueOnFail === true;
+
         autoReviewCount = 0;
-        autoReviewMode = 'Review';
+        autoReviewMode = continueOnFail ? 'Nonstop' : 'Review';
         autoReviewActive = true;
         updateOverlay();
 
@@ -516,12 +518,18 @@
                 if (fail) {
                     if (!autoReviewActive) break;
 
-                    console.log(
-                        `Auto Review stopped: FAIL found after ${autoReviewCount} charts`
-                    );
+                    if (!continueOnFail) {
+                        console.log(
+                            `Auto Review stopped: FAIL found after ${autoReviewCount} charts`
+                        );
 
-                    fail.click();
-                    break;
+                        fail.click();
+                        break;
+                    }
+
+                    console.log(
+                        `Nonstop review continuing past FAIL after ${autoReviewCount} charts`
+                    );
                 }
 
                 const beforePatient = getCurrentPatientIdentity();
@@ -546,8 +554,12 @@
                     autoReviewCount % APPROVE_CHECK_INTERVAL === 0
                 ) {
                     if (!canApproveAndLoadNext()) {
+                        const label = continueOnFail
+                            ? 'Nonstop review'
+                            : 'Auto Review';
+
                         console.log(
-                            `Auto Review stopped: queue exhausted after ${autoReviewCount} charts`
+                            `${label} stopped: queue exhausted after ${autoReviewCount} charts`
                         );
                         break;
                     }
@@ -685,6 +697,14 @@
         );
     }
 
+    function startSlowNonstopReview() {
+        runLocked(() =>
+            reviewUntilFail(CONFIG.slowReviewDelay, {
+                continueOnFail: true
+            })
+        );
+    }
+
     function startAutoApprove() {
         if (autoReviewActive) {
             if (autoReviewMode === 'Approve') {
@@ -714,87 +734,102 @@
 
     let helpPanel;
 
+    // Keyword labels only. Full behavior:
+    // S load the next patient, Z go back, A approve once,
+    // D open the first FAIL link, F click the first failed unchecked box,
+    // Q ROS_Standard, W ROS_SBRT/SRS, Shift+Q RCO_Standard, Shift+W RCO_SBRT,
+    // C fast review until FAIL (clicks the FAIL link and stops),
+    // R slow review until FAIL (same stop, CONFIG.slowReviewDelay pause),
+    // E nonstop slow review: keep loading the next patient past FAIL
+    //   and do not click the FAIL link,
+    // Ctrl+Shift+R auto-approve until FAIL, X stop, H toggle this panel.
     const HELP_ACTIONS = [
         {
-            name: 'Load the next patient',
+            name: 'Next',
             button: 'S',
             shortcut: 'Alt+S',
             run: loadNextPatient
         },
         {
-            name: 'Go back',
+            name: 'Back',
             button: 'Z',
             shortcut: 'Alt+Z',
             run: goBack
         },
         {
-            name: 'Click Approve and Load Next once',
+            name: 'Approve',
             button: 'A',
             shortcut: 'Alt+A',
             run: approveOnce
         },
         {
-            name: 'Open the first FAIL link',
+            name: 'Fail link',
             button: 'D',
             shortcut: 'Alt+D',
             run: openFirstFail
         },
         {
-            name: 'Click the first failed unchecked box',
+            name: 'Fail box',
             button: 'F',
             shortcut: 'Alt+F',
             run: clickFirstFailedUnchecked
         },
         {
-            name: 'Apply the ROS_Standard template',
+            name: 'ROS Standard',
             button: 'Q',
             shortcut: 'Alt+Q',
             run: applyRosStandard
         },
         {
-            name: 'Apply the ROS_SBRT/SRS template',
+            name: 'ROS SBRT',
             button: 'W',
             shortcut: 'Alt+W',
             run: applyRosSbrt
         },
         {
-            name: 'Apply the RCO_Standard template',
+            name: 'RCO Standard',
             button: '⇧Q',
             shortcut: 'Shift+Q',
             run: applyRcoStandard
         },
         {
-            name: 'Apply the RCO_SBRT template',
+            name: 'RCO SBRT',
             button: '⇧W',
             shortcut: 'Shift+W',
             run: applyRcoSbrt
         },
         {
-            name: 'Start auto-review: load the next patient until a FAIL is found',
+            name: 'Review',
             button: 'C',
             shortcut: 'Alt+C',
             run: startAutoReview
         },
         {
-            name: 'Start slow auto-review: pause on each chart, then continue until a FAIL is found',
+            name: 'Slow review',
             button: 'R',
             shortcut: 'Alt+R',
             run: startSlowAutoReview
         },
         {
-            name: 'Start auto-approve after a confirm. Clicks Approve and Load Next until a FAIL, the queue ends, or the patient does not change. Press again to stop',
+            name: 'Nonstop review',
+            button: 'E',
+            shortcut: 'Alt+E',
+            run: startSlowNonstopReview
+        },
+        {
+            name: 'Auto-approve',
             button: '⌃⇧R',
             shortcut: 'Ctrl+Shift+R',
             run: startAutoApprove
         },
         {
-            name: 'Stop auto-review or auto-approve immediately',
+            name: 'Stop',
             button: 'X',
             shortcut: 'Alt+X',
             run: stopAuto
         },
         {
-            name: 'Show or hide help',
+            name: 'Help',
             button: 'H',
             shortcut: 'Alt+H',
             run: toggleHelpPanel
@@ -823,38 +858,42 @@
         style.textContent = `
             #chartcheck-help-panel {
                 position: fixed;
-                top: 12px;
-                left: 12px;
+                top: 8px;
+                left: 8px;
                 z-index: 1000000;
                 display: none;
                 flex-direction: column;
-                width: min(480px, calc(100vw - 24px));
-                max-height: calc(100vh - 24px);
+                width: max-content;
+                max-width: calc(100vw - 16px);
+                max-height: calc(100vh - 16px);
                 background: rgba(0, 0, 0, 0.92);
                 color: #e6e6e6;
                 font-family: monospace;
-                font-size: 14px;
-                line-height: 1.35;
+                font-size: 11px;
+                line-height: 1.15;
                 border: 1px solid #00ff66;
-                border-radius: 8px;
-                box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+                border-radius: 4px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
                 pointer-events: auto;
                 overflow: hidden;
             }
 
             #chartcheck-help-panel .chartcheck-help-title {
                 flex: 0 0 auto;
-                padding: 10px 14px;
+                padding: 2px 7px;
                 background: #00ff66;
                 color: #04140c;
                 font-weight: bold;
-                font-size: 15px;
+                font-size: 11px;
+                line-height: 1.2;
                 cursor: move;
                 user-select: none;
                 -webkit-user-select: none;
             }
 
             #chartcheck-help-panel .chartcheck-help-list {
+                display: grid;
+                grid-template-columns: max-content max-content;
                 overflow: auto;
                 pointer-events: auto;
             }
@@ -863,31 +902,47 @@
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                gap: 12px;
-                padding: 7px 12px;
+                gap: 6px;
+                padding: 1px 6px;
                 border-top: 1px solid rgba(0, 255, 102, 0.18);
                 pointer-events: auto;
+            }
+
+            #chartcheck-help-panel .chartcheck-help-row:nth-child(odd):not(.chartcheck-help-span) {
+                border-right: 1px solid rgba(0, 255, 102, 0.18);
+            }
+
+            #chartcheck-help-panel .chartcheck-help-span {
+                grid-column: 1 / -1;
+                justify-content: flex-start;
+                gap: 8px;
+            }
+
+            #chartcheck-help-panel .chartcheck-help-span .chartcheck-help-name {
+                flex: 0 0 auto;
             }
 
             #chartcheck-help-panel .chartcheck-help-name {
                 flex: 1 1 auto;
                 min-width: 0;
+                white-space: nowrap;
             }
 
             #chartcheck-help-panel .chartcheck-help-btn {
                 flex: 0 0 auto;
-                min-width: 4.6em;
+                min-width: 3.4em;
                 margin: 0;
-                padding: 4px 8px;
+                padding: 0 4px;
                 font-family: monospace;
-                font-size: 14px;
+                font-size: 11px;
                 font-weight: bold;
-                line-height: 1.2;
+                line-height: 1.35;
                 text-align: center;
+                white-space: nowrap;
                 color: #00ff66;
                 background: #101010;
                 border: 1px solid #00ff66;
-                border-radius: 4px;
+                border-radius: 3px;
                 cursor: pointer;
                 pointer-events: auto;
             }
@@ -968,7 +1023,7 @@
 
         const title = document.createElement('div');
         title.className = 'chartcheck-help-title';
-        title.textContent = 'ChartCheck Hotkeys';
+        title.textContent = 'Hotkeys';
 
         const list = document.createElement('div');
         list.className = 'chartcheck-help-list';
@@ -976,6 +1031,10 @@
         orderedHelpActions().forEach(action => {
             const row = document.createElement('div');
             row.className = 'chartcheck-help-row';
+
+            if (action.button === 'H') {
+                row.classList.add('chartcheck-help-span');
+            }
 
             const name = document.createElement('div');
             name.className = 'chartcheck-help-name';
@@ -1101,6 +1160,11 @@
 
         if (e.altKey && key === 'r') {
             startSlowAutoReview();
+        }
+
+        if (e.altKey && key === 'e') {
+            e.preventDefault();
+            startSlowNonstopReview();
         }
 
         if (e.altKey && key === 'x') {
