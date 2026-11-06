@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.23
+// @version      3.24
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -78,9 +78,16 @@
     let statusEl;
     let helpList;
     let panelHidden = false;
-    let copyNotice = '';
-    let lastAutoCopyPatientId = '';
+    let trackedIdentity = '';
+    let settledObservation = null;
+    let baselineObservation = null;
+    let awaitingFreshBanner = false;
+    let copiedIdentity = '';
     let autoCopyBusy = false;
+    let retryTimer = null;
+    let retryAttempt = 0;
+    let failureLoggedFor = '';
+    let exhaustedKey = '';
 
     function updateOverlay() {
         if (!statusEl) return;
@@ -104,8 +111,7 @@
             '<span style="color:' + statusColor + '">' +
             statusText +
             '</span><br>Roseville Count: ' + rosevilleReviewCount +
-            '<br>Rancho Count: ' + ranchoReviewCount +
-            (copyNotice ? '<br>' + copyNotice : '');
+            '<br>Rancho Count: ' + ranchoReviewCount;
     }
 
     function resetReviewCounts() {
@@ -425,86 +431,231 @@
         return ancestorChain(el).some(node => node.id === 'chartcheck-panel');
     }
 
-    function escapeRegExp(value) {
-        return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
+    function findCurrentPatientRow() {
+        const sidebar = findPatientsSidebar();
 
-    // Banner text for the current id, with the id and a trailing or
-    // leading date removed. Remaining whitespace is trimmed at the
-    // ends only, so the displayed name is not rewritten.
-    function displayedPatientName(text, id) {
-        if (!text || !id) return '';
+        if (!sidebar) return null;
 
-        const idPattern = escapeRegExp(id);
-        let name = String(text);
+        const id = normalizeText(sidebar.getAttribute('currentpatientid') || '');
+        let currentRow = null;
 
-        name = name.replace(
-            new RegExp('\\s*\\(\\s*' + idPattern + '\\s*\\)', 'g'),
-            ''
-        );
-        name = name.replace(new RegExp(idPattern, 'g'), '');
-        name = name.replace(
-            /\s+\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}\s*$/g,
-            ''
-        );
-        name = name.replace(
-            /^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}\s+/g,
-            ''
-        );
+        if (id) {
+            currentRow = findAllTextMatches(id).find(el =>
+                el.tagName &&
+                el.tagName.toLowerCase() === 'li' &&
+                el.hasAttribute('current') &&
+                isInPatientsSidebar(el)
+            ) || null;
+        }
 
-        return name.trim();
-    }
+        if (currentRow) return currentRow;
 
-    // The name heading outside the patient list whose text contains
-    // the current patient id. A banner that still shows the previous
-    // id is ignored, and so is every row in patients-sidebar.
-    function verifiedDisplayedName() {
-        const id = currentPatientId();
-
-        if (!id) return '';
-
-        let best = null;
-
-        walkDom(document, el => {
-            if (!el.tagName || isInPatientsSidebar(el) || isInHotkeyPanel(el)) {
-                return;
-            }
-
-            const raw = el.textContent || '';
-            const normalized = normalizeText(raw);
-
-            if (!normalized.includes(id) || normalized.length > 180) return;
-
-            const name = displayedPatientName(raw, id);
-
-            if (!name || !/[A-Za-z]/.test(name)) return;
-            if (/cancer center/i.test(name) || /radiation oncology/i.test(name)) {
-                return;
-            }
-
-            for (const child of el.children) {
-                const childRaw = child.textContent || '';
-
-                if (!normalizeText(childRaw).includes(id)) continue;
-
-                const childName = displayedPatientName(childRaw, id);
-
-                if (
-                    childName &&
-                    /[A-Za-z]/.test(childName) &&
-                    !/cancer center/i.test(childName) &&
-                    !/radiation oncology/i.test(childName)
-                ) {
-                    return;
-                }
-            }
-
-            if (!best || normalized.length < best.length) {
-                best = { name, length: normalized.length };
+        walkDom(sidebar, el => {
+            if (
+                !currentRow &&
+                el.tagName &&
+                el.tagName.toLowerCase() === 'li' &&
+                el.hasAttribute('current')
+            ) {
+                currentRow = el;
             }
         });
 
-        return best ? best.name : '';
+        return currentRow;
+    }
+
+    // Comparison key only. The parenthetical here is not the copied MRN.
+    function nameKey(text) {
+        return normalizeText(String(text || '').replace(/\([^)]*\)/g, ' '));
+    }
+
+    function isMrnToken(value) {
+        if (!value) return false;
+        if (/cancer|oncology|roseville|rancho/i.test(value)) return false;
+        if (/^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}$/.test(value)) return false;
+        if (/[A-Za-z]/.test(value) && /[,\s]/.test(value)) return false;
+
+        return true;
+    }
+
+    // Only a single parenthetical on the name heading counts. Any other
+    // parenthesis on the page is ignored, and more than one on the
+    // heading is ambiguous, so that case copies nothing.
+    function singleParentheticalMrn(text) {
+        const matches = String(text || '').match(/\(([^)]*)\)/g);
+
+        if (!matches || matches.length !== 1) return '';
+
+        const inner = matches[0].slice(1, -1).trim();
+
+        if (!isMrnToken(inner)) return '';
+
+        const outside = nameKey(text);
+
+        if (!outside || !/[A-Za-z]/.test(outside)) return '';
+
+        return inner;
+    }
+
+    function mrnFromLabel(scope) {
+        if (!scope) return '';
+
+        let found = '';
+
+        walkDom(scope, el => {
+            if (found || !el.tagName || el.children.length) return;
+
+            const text = (el.textContent || '').trim();
+            const inline = text.match(/^MRN\s*[:#]\s*(.*)$/i)
+                || text.match(/^Medical Record(?: Number)?\s*[:#]\s*(.*)$/i);
+
+            if (inline && isMrnToken(inline[1].trim())) {
+                found = inline[1].trim();
+                return;
+            }
+
+            if (!/^MRN\s*:?\s*$/i.test(text) && !/^Medical Record(?: Number)?\s*:?\s*$/i.test(text)) {
+                return;
+            }
+
+            const next = el.nextElementSibling;
+            const value = (next?.textContent || '').trim();
+
+            if (isMrnToken(value)) found = value;
+        });
+
+        return found;
+    }
+
+    function tightHeading(node) {
+        const raw = node.textContent || '';
+        const key = nameKey(raw);
+
+        if (!key || normalizeText(raw).length > 200) return null;
+
+        for (const child of node.children) {
+            const childRaw = child.textContent || '';
+
+            if (
+                nameKey(childRaw) === key &&
+                normalizeText(childRaw).length <= 200
+            ) {
+                const tighter = tightHeading(child);
+
+                if (tighter) return tighter;
+            }
+        }
+
+        return node;
+    }
+
+    // The name heading directly above the center line. A matching name
+    // anywhere else, including another patient with the same name, is
+    // not this banner.
+    function findStructuralBannerHeading() {
+        const row = findCurrentPatientRow();
+        const rowName = nameKey(row ? row.textContent : '');
+
+        if (!rowName) return null;
+
+        const lines = findCenterLineElements();
+
+        for (const line of lines) {
+            let node = line.previousElementSibling;
+            let steps = 0;
+
+            while (node && steps < 5) {
+                if (!isInPatientsSidebar(node) && !isInHotkeyPanel(node)) {
+                    const text = node.textContent || '';
+
+                    if (
+                        nameKey(text) === rowName &&
+                        normalizeText(text).length < 400 &&
+                        !isCenterLine(text)
+                    ) {
+                        const heading = tightHeading(node);
+
+                        if (heading && nameKey(heading.textContent || '') === rowName) {
+                            return heading;
+                        }
+                    }
+                }
+
+                node = node.previousElementSibling;
+                steps += 1;
+            }
+        }
+
+        return null;
+    }
+
+    function bannerScope(heading) {
+        const parent = heading.parentElement;
+
+        if (
+            parent &&
+            !isInPatientsSidebar(parent) &&
+            !isInHotkeyPanel(parent) &&
+            normalizeText(parent.textContent).length <= 600
+        ) {
+            return parent;
+        }
+
+        return heading;
+    }
+
+    function bannerObservation() {
+        const heading = findStructuralBannerHeading();
+
+        if (!heading) {
+            return { headingText: '', label: '', paren: '' };
+        }
+
+        const label = mrnFromLabel(bannerScope(heading));
+
+        return {
+            headingText: normalizeText(heading.textContent || ''),
+            label: label,
+            paren: label ? '' : singleParentheticalMrn(heading.textContent || '')
+        };
+    }
+
+    function sameObservation(left, right) {
+        if (!left || !right) return false;
+
+        return left.headingText === right.headingText &&
+            left.label === right.label &&
+            left.paren === right.paren;
+    }
+
+    // baseline is the previous patient's banner. Until this banner
+    // actually changes, there is no verified MRN. A label that is still
+    // the previous value is not replaced by a parenthetical guess.
+    function selectFreshMrn(obs, baseline) {
+        if (!obs.headingText && !obs.label && !obs.paren) return '';
+
+        if (!baseline) {
+            if (obs.label) return obs.label;
+
+            return obs.paren || '';
+        }
+
+        const headingMoved = obs.headingText !== baseline.headingText;
+        const labelMoved = obs.label !== baseline.label;
+
+        if (!headingMoved && !labelMoved) return '';
+
+        if (baseline.label) {
+            if (!labelMoved) return '';
+            if (obs.label) return obs.label;
+
+            return headingMoved ? (obs.paren || '') : '';
+        }
+
+        if (obs.label) return obs.label;
+        if (headingMoved) return obs.paren || '';
+
+        return '';
     }
 
     async function writeClipboard(text) {
@@ -536,44 +687,103 @@
         }
     }
 
-    function setCopyNotice(text) {
-        copyNotice = text;
-        updateOverlay();
+    const MRN_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
+
+    function clearMrnRetry() {
+        if (retryTimer) {
+            clearTimeout(retryTimer);
+            retryTimer = null;
+        }
+
+        retryAttempt = 0;
     }
 
-    async function copyCurrentPatientName() {
-        const name = verifiedDisplayedName();
+    function maybeAutoCopyPatientMrn() {
+        if (autoCopyBusy || retryTimer) return;
 
-        if (!name) {
-            setCopyNotice('No name');
+        const identity = currentPatientId();
+
+        if (!identity) return;
+
+        if (identity !== trackedIdentity) {
+            const previousIdentity = trackedIdentity;
+
+            trackedIdentity = identity;
+            clearMrnRetry();
+            failureLoggedFor = '';
+            exhaustedKey = '';
+            baselineObservation = previousIdentity ? settledObservation : null;
+            awaitingFreshBanner = !!previousIdentity;
+        }
+
+        const obs = bannerObservation();
+
+        if (copiedIdentity === identity && !awaitingFreshBanner) {
+            settledObservation = obs;
             return;
         }
 
-        const copied = await writeClipboard(name);
+        if (awaitingFreshBanner && sameObservation(obs, baselineObservation)) {
+            return;
+        }
 
-        setCopyNotice(copied ? 'Name copied' : 'Copy failed');
+        const mrn = selectFreshMrn(
+            obs,
+            awaitingFreshBanner ? baselineObservation : null
+        );
+
+        if (!mrn) return;
+
+        const key = identity + '\n' + mrn;
+
+        if (exhaustedKey === key) return;
+
+        awaitingFreshBanner = false;
+        startMrnCopy(identity, mrn, key, obs);
     }
 
-    async function maybeAutoCopyPatientName() {
+    async function startMrnCopy(identity, mrn, key, obs) {
         if (autoCopyBusy) return;
 
-        const id = currentPatientId();
-        const name = verifiedDisplayedName();
-
-        if (!id || !name || id === lastAutoCopyPatientId) return;
-
-        lastAutoCopyPatientId = id;
         autoCopyBusy = true;
+        let copied = false;
 
         try {
-            const copied = await writeClipboard(name);
-
-            if (currentPatientId() !== id) return;
-
-            setCopyNotice(copied ? 'Name copied' : 'Copy failed');
+            copied = await writeClipboard(mrn);
         } finally {
             autoCopyBusy = false;
         }
+
+        if (currentPatientId() !== identity) return;
+
+        if (copied) {
+            copiedIdentity = identity;
+            settledObservation = obs;
+            baselineObservation = null;
+            awaitingFreshBanner = false;
+            exhaustedKey = '';
+            retryAttempt = 0;
+            failureLoggedFor = '';
+            return;
+        }
+
+        if (failureLoggedFor !== key) {
+            console.log('ChartCheck Hotkeys: MRN copy failed');
+            failureLoggedFor = key;
+        }
+
+        if (retryAttempt >= MRN_RETRY_DELAYS_MS.length) {
+            exhaustedKey = key;
+            return;
+        }
+
+        const delay = MRN_RETRY_DELAYS_MS[retryAttempt];
+
+        retryAttempt += 1;
+        retryTimer = setTimeout(() => {
+            retryTimer = null;
+            maybeAutoCopyPatientMrn();
+        }, delay);
     }
 
     function isCenterLine(text) {
@@ -1280,10 +1490,6 @@
                 pointer-events: auto;
             }
 
-            #chartcheck-panel .chartcheck-copy-row {
-                grid-column: 1 / -1;
-            }
-
             #chartcheck-panel .chartcheck-status {
                 flex: 0 0 auto;
                 padding: 14px 18px;
@@ -1495,30 +1701,6 @@
             list.appendChild(row);
         });
 
-        const copyRow = document.createElement('div');
-        copyRow.className = 'chartcheck-help-row chartcheck-copy-row';
-
-        const copyLabel = document.createElement('div');
-        copyLabel.className = 'chartcheck-help-name';
-        copyLabel.textContent = 'Copy Name';
-
-        const copyButton = document.createElement('button');
-        copyButton.type = 'button';
-        copyButton.className = 'chartcheck-help-btn';
-        copyButton.textContent = 'Copy';
-        copyButton.title = 'Copy the current patient name';
-        copyButton.setAttribute('aria-label', 'Copy Name');
-
-        copyButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            copyCurrentPatientName();
-        });
-
-        copyRow.appendChild(copyLabel);
-        copyRow.appendChild(copyButton);
-        list.appendChild(copyRow);
-
         const status = document.createElement('div');
         status.className = 'chartcheck-status';
 
@@ -1558,7 +1740,7 @@
 
     function refreshPatientSiteGray() {
         applyPatientSiteGray(detectPatientSite());
-        maybeAutoCopyPatientName();
+        maybeAutoCopyPatientMrn();
     }
 
     // Opening always shows the full panel (hotkey list included).
