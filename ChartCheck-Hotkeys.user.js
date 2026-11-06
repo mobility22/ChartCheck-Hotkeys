@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.19
+// @version      3.20
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -65,14 +65,16 @@
     // ============================================================
     // Floating window
     // One panel: version title, hotkey list, then status.
-    // LDH (title button and Alt+L) hides and restores that panel.
-    // No second overlay is created while it is hidden.
+    // It starts hidden so the collapsed title/status strip is not
+    // left on the chart. Alt+L or LDH opens the full panel with the
+    // hotkey list expanded, and hides it again. While it is hidden,
+    // nothing from this script is visible.
     // ============================================================
 
     let panel;
     let statusEl;
     let helpList;
-    let panelHidden = false;
+    let panelHidden = true;
 
     function updateOverlay() {
         if (!statusEl) return;
@@ -343,6 +345,168 @@
         }
 
         return { id, name };
+    }
+
+    // The center line sits under the patient name in the middle of the
+    // chart, for example "Roseville Cancer Center, ROS Radiation Oncology, …"
+    // or "Rancho Cordova Cancer Center, RCO Radiation Oncology, …".
+    // Roseville / Rancho in that line is the site. ROS and RCO are
+    // department abbreviations on the same line and are not the site.
+    function currentPatientId() {
+        const sidebar = findPatientsSidebar();
+        const fromSidebar = normalizeText(
+            sidebar?.getAttribute('currentpatientid') || ''
+        );
+
+        if (fromSidebar) return fromSidebar;
+
+        const match = (location.pathname || '').match(/\/patient\/([^/]+)/i);
+
+        return match ? decodeURIComponent(match[1]) : '';
+    }
+
+    function ancestorChain(el) {
+        const chain = [];
+        let node = el;
+
+        while (node) {
+            chain.push(node);
+
+            const root = typeof node.getRootNode === 'function'
+                ? node.getRootNode()
+                : null;
+
+            if (root && root.host) {
+                node = root.host;
+            } else {
+                node = node.parentElement || null;
+            }
+        }
+
+        return chain;
+    }
+
+    function isInPatientsSidebar(el) {
+        return ancestorChain(el).some(node =>
+            node.tagName &&
+            node.tagName.toLowerCase() === 'patients-sidebar'
+        );
+    }
+
+    function isInHotkeyPanel(el) {
+        return ancestorChain(el).some(node => node.id === 'chartcheck-panel');
+    }
+
+    function isCenterLine(text) {
+        return /cancer center[, ]+(?:ros|rco)\s+radiation oncology/i.test(
+            normalizeText(text)
+        );
+    }
+
+    // Higher scores are the subtitle directly under this patient's name.
+    // A center line elsewhere on the chart scores 0 and is ignored.
+    function centerLineScore(el, id) {
+        if (!id) return 0;
+
+        let node = el;
+        let best = 0;
+
+        for (let depth = 0; depth < 6 && node; depth += 1) {
+            const prev = node.previousElementSibling;
+            const prevIsSidebar = prev && (
+                (prev.tagName && prev.tagName.toLowerCase() === 'patients-sidebar') ||
+                isInPatientsSidebar(prev)
+            );
+
+            if (prev && !prevIsSidebar && normalizeText(prev.textContent).includes(id)) {
+                const prevLen = normalizeText(prev.textContent).length;
+
+                if (prevLen < 200) {
+                    best = Math.max(best, 100 - depth);
+                }
+            }
+
+            const parent = node.parentElement;
+
+            if (!parent) {
+                const root = typeof node.getRootNode === 'function'
+                    ? node.getRootNode()
+                    : null;
+
+                node = root && root.host ? root.host : null;
+                continue;
+            }
+
+            const parentText = normalizeText(parent.textContent);
+
+            if (parentText.includes(id) && parentText.length < 500) {
+                best = Math.max(best, 80 - depth);
+            }
+
+            node = parent;
+        }
+
+        return best;
+    }
+
+    function findCenterLineElements() {
+        const matches = [];
+
+        walkDom(document, el => {
+            if (!el.tagName || isInPatientsSidebar(el) || isInHotkeyPanel(el)) {
+                return;
+            }
+
+            const text = normalizeText(el.textContent);
+
+            if (text.length > 240 || !isCenterLine(text)) return;
+
+            for (const child of el.children) {
+                if (isCenterLine(child.textContent)) return;
+            }
+
+            matches.push(el);
+        });
+
+        return matches;
+    }
+
+    function findCenterLineText() {
+        const matches = findCenterLineElements();
+
+        if (!matches.length) return '';
+
+        const id = currentPatientId();
+        let bestEl = null;
+        let bestScore = 0;
+
+        matches.forEach(el => {
+            const score = centerLineScore(el, id);
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestEl = el;
+            }
+        });
+
+        if (!bestEl) return '';
+
+        return normalizeText(bestEl.textContent);
+    }
+
+    function classifyCenterLine(text) {
+        const value = normalizeText(text).toLowerCase();
+        const roseville = value.includes('roseville');
+        const rancho = value.includes('rancho');
+
+        if (roseville && !rancho) return 'roseville';
+        if (rancho && !roseville) return 'rancho';
+
+        return 'unknown';
+    }
+
+    function detectPatientSite() {
+        return classifyCenterLine(findCenterLineText());
     }
 
     function hasPatientIdentity(identity) {
@@ -754,24 +918,28 @@
             name: 'ROS Standard',
             button: 'Q',
             shortcut: 'Alt+Q',
+            sitePair: 'ros',
             run: applyRosStandard
         },
         {
             name: 'ROS SBRT',
             button: 'W',
             shortcut: 'Alt+W',
+            sitePair: 'ros',
             run: applyRosSbrt
         },
         {
             name: 'RCO Standard',
             button: '⇧Q',
             shortcut: 'Shift+Q',
+            sitePair: 'rco',
             run: applyRcoStandard
         },
         {
             name: 'RCO SBRT',
             button: '⇧W',
             shortcut: 'Shift+W',
+            sitePair: 'rco',
             run: applyRcoSbrt
         },
         {
@@ -876,7 +1044,7 @@
             }
 
             #chartcheck-panel.chartcheck-hidden {
-                display: none;
+                display: none !important;
             }
 
             #chartcheck-panel .chartcheck-title {
@@ -989,6 +1157,23 @@
                 background: #00ff66;
                 color: #04140c;
             }
+
+            #chartcheck-panel .chartcheck-help-row.chartcheck-site-muted .chartcheck-help-name {
+                color: #8d8d8d;
+            }
+
+            #chartcheck-panel .chartcheck-help-row.chartcheck-site-muted .chartcheck-help-btn {
+                color: #9a9a9a;
+                background: #2a2a2a;
+                border-color: #6a6a6a;
+                opacity: 0.85;
+            }
+
+            #chartcheck-panel .chartcheck-help-row.chartcheck-site-muted .chartcheck-help-btn:hover,
+            #chartcheck-panel .chartcheck-help-row.chartcheck-site-muted .chartcheck-help-btn:focus {
+                color: #9a9a9a;
+                background: #2a2a2a;
+            }
         `;
 
         (document.head || document.documentElement).appendChild(style);
@@ -1067,8 +1252,10 @@
 
         const root = document.createElement('div');
         root.id = 'chartcheck-panel';
+        root.classList.add('chartcheck-hidden');
         root.setAttribute('role', 'dialog');
         root.setAttribute('aria-label', 'ChartCheck Hotkeys');
+        root.setAttribute('aria-hidden', 'true');
 
         const title = document.createElement('div');
         title.className = 'chartcheck-title';
@@ -1082,7 +1269,7 @@
         ldh.type = 'button';
         ldh.className = 'chartcheck-ldh';
         ldh.textContent = 'LDH';
-        ldh.title = 'Hide this panel. Alt+L shows it again.';
+        ldh.title = 'Hide this panel. Alt+L shows the full panel again.';
         ldh.setAttribute('aria-label', 'LDH');
 
         ldh.addEventListener('mousedown', (event) => {
@@ -1105,6 +1292,10 @@
         orderedHelpActions().forEach(action => {
             const row = document.createElement('div');
             row.className = 'chartcheck-help-row';
+
+            if (action.sitePair) {
+                row.dataset.sitePair = action.sitePair;
+            }
 
             const name = document.createElement('div');
             name.className = 'chartcheck-help-name';
@@ -1143,6 +1334,7 @@
         statusEl = status;
         document.body.appendChild(root);
         updateOverlay();
+        refreshPatientSiteGray();
     }
 
     function ensureOverlay() {
@@ -1151,36 +1343,81 @@
         }
     }
 
-    function toggleHelpPanel() {
-        ensureOverlay();
+    function applyPatientSiteGray(site) {
+        if (panel) panel.dataset.patientSite = site;
+        if (!helpList) return;
 
+        helpList.querySelectorAll('.chartcheck-help-row').forEach(row => {
+            const pair = row.dataset.sitePair || '';
+            const mute = (site === 'roseville' && pair === 'rco')
+                || (site === 'rancho' && pair === 'ros');
+
+            row.classList.toggle('chartcheck-site-muted', mute);
+        });
+    }
+
+    function refreshPatientSiteGray() {
+        applyPatientSiteGray(detectPatientSite());
+    }
+
+    function syncHelpAria() {
+        if (!helpList) return;
+
+        helpList.setAttribute('aria-hidden', helpIsOpen() ? 'false' : 'true');
+    }
+
+    // Opening always shows the full panel (help list included),
+    // never the collapsed title-and-status strip.
+    function showPanel() {
         if (!panel) return;
 
-        panel.classList.toggle('chartcheck-expanded');
-
-        if (helpList) {
-            helpList.setAttribute('aria-hidden', helpIsOpen() ? 'false' : 'true');
-        }
+        panelHidden = false;
+        panel.classList.remove('chartcheck-hidden');
+        panel.classList.add('chartcheck-expanded');
+        panel.setAttribute('aria-hidden', 'false');
+        syncHelpAria();
+        refreshPatientSiteGray();
 
         if (panel.style.left) {
             clampPanel();
         }
     }
 
-    // LDH hides and restores the one ChartCheck panel. It does not
-    // create a second element to stand in while the panel is hidden.
+    function hidePanel() {
+        if (!panel) return;
+
+        panelHidden = true;
+        panel.classList.add('chartcheck-hidden');
+        panel.setAttribute('aria-hidden', 'true');
+    }
+
+    function toggleHelpPanel() {
+        ensureOverlay();
+
+        if (!panel) return;
+
+        if (panelHidden) {
+            showPanel();
+            return;
+        }
+
+        panel.classList.toggle('chartcheck-expanded');
+        syncHelpAria();
+
+        if (panel.style.left) {
+            clampPanel();
+        }
+    }
+
+    // LDH and Alt+L hide and show the one panel. Hidden leaves
+    // no visible ChartCheck widget on the page.
     function togglePanelVisibility() {
         ensureOverlay();
 
         if (!panel) return;
 
-        panelHidden = !panelHidden;
-        panel.classList.toggle('chartcheck-hidden', panelHidden);
-        panel.setAttribute('aria-hidden', panelHidden ? 'true' : 'false');
-
-        if (!panelHidden && panel.style.left) {
-            clampPanel();
-        }
+        if (panelHidden) showPanel();
+        else hidePanel();
     }
 
     // ============================================================
@@ -1289,6 +1526,8 @@
 
     window.addEventListener('load', () => {
         createOverlay();
+        refreshPatientSiteGray();
+        setInterval(refreshPatientSiteGray, 800);
     });
 
     document.addEventListener('keydown', handleHotkeys);
