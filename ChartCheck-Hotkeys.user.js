@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.22
+// @version      3.23
 // @match        https://10.231.132.118/*
 // @grant        GM_info
+// @grant        GM_setClipboard
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
 // @updateURL    https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
 // ==/UserScript==
@@ -77,6 +78,9 @@
     let statusEl;
     let helpList;
     let panelHidden = false;
+    let copyNotice = '';
+    let lastAutoCopyPatientId = '';
+    let autoCopyBusy = false;
 
     function updateOverlay() {
         if (!statusEl) return;
@@ -100,7 +104,8 @@
             '<span style="color:' + statusColor + '">' +
             statusText +
             '</span><br>Roseville Count: ' + rosevilleReviewCount +
-            '<br>Rancho Count: ' + ranchoReviewCount;
+            '<br>Rancho Count: ' + ranchoReviewCount +
+            (copyNotice ? '<br>' + copyNotice : '');
     }
 
     function resetReviewCounts() {
@@ -418,6 +423,157 @@
 
     function isInHotkeyPanel(el) {
         return ancestorChain(el).some(node => node.id === 'chartcheck-panel');
+    }
+
+    function escapeRegExp(value) {
+        return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // Banner text for the current id, with the id and a trailing or
+    // leading date removed. Remaining whitespace is trimmed at the
+    // ends only, so the displayed name is not rewritten.
+    function displayedPatientName(text, id) {
+        if (!text || !id) return '';
+
+        const idPattern = escapeRegExp(id);
+        let name = String(text);
+
+        name = name.replace(
+            new RegExp('\\s*\\(\\s*' + idPattern + '\\s*\\)', 'g'),
+            ''
+        );
+        name = name.replace(new RegExp(idPattern, 'g'), '');
+        name = name.replace(
+            /\s+\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}\s*$/g,
+            ''
+        );
+        name = name.replace(
+            /^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}\s+/g,
+            ''
+        );
+
+        return name.trim();
+    }
+
+    // The name heading outside the patient list whose text contains
+    // the current patient id. A banner that still shows the previous
+    // id is ignored, and so is every row in patients-sidebar.
+    function verifiedDisplayedName() {
+        const id = currentPatientId();
+
+        if (!id) return '';
+
+        let best = null;
+
+        walkDom(document, el => {
+            if (!el.tagName || isInPatientsSidebar(el) || isInHotkeyPanel(el)) {
+                return;
+            }
+
+            const raw = el.textContent || '';
+            const normalized = normalizeText(raw);
+
+            if (!normalized.includes(id) || normalized.length > 180) return;
+
+            const name = displayedPatientName(raw, id);
+
+            if (!name || !/[A-Za-z]/.test(name)) return;
+            if (/cancer center/i.test(name) || /radiation oncology/i.test(name)) {
+                return;
+            }
+
+            for (const child of el.children) {
+                const childRaw = child.textContent || '';
+
+                if (!normalizeText(childRaw).includes(id)) continue;
+
+                const childName = displayedPatientName(childRaw, id);
+
+                if (
+                    childName &&
+                    /[A-Za-z]/.test(childName) &&
+                    !/cancer center/i.test(childName) &&
+                    !/radiation oncology/i.test(childName)
+                ) {
+                    return;
+                }
+            }
+
+            if (!best || normalized.length < best.length) {
+                best = { name, length: normalized.length };
+            }
+        });
+
+        return best ? best.name : '';
+    }
+
+    async function writeClipboard(text) {
+        if (typeof GM_setClipboard === 'function') {
+            try {
+                const result = GM_setClipboard(text, 'text');
+
+                if (result && typeof result.then === 'function') {
+                    await result;
+                }
+
+                return true;
+            } catch (err) {
+                return false;
+            }
+        }
+
+        const clipboard = navigator.clipboard;
+
+        if (!clipboard || typeof clipboard.writeText !== 'function') {
+            return false;
+        }
+
+        try {
+            await clipboard.writeText(text);
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    function setCopyNotice(text) {
+        copyNotice = text;
+        updateOverlay();
+    }
+
+    async function copyCurrentPatientName() {
+        const name = verifiedDisplayedName();
+
+        if (!name) {
+            setCopyNotice('No name');
+            return;
+        }
+
+        const copied = await writeClipboard(name);
+
+        setCopyNotice(copied ? 'Name copied' : 'Copy failed');
+    }
+
+    async function maybeAutoCopyPatientName() {
+        if (autoCopyBusy) return;
+
+        const id = currentPatientId();
+        const name = verifiedDisplayedName();
+
+        if (!id || !name || id === lastAutoCopyPatientId) return;
+
+        lastAutoCopyPatientId = id;
+        autoCopyBusy = true;
+
+        try {
+            const copied = await writeClipboard(name);
+
+            if (currentPatientId() !== id) return;
+
+            setCopyNotice(copied ? 'Name copied' : 'Copy failed');
+        } finally {
+            autoCopyBusy = false;
+        }
     }
 
     function isCenterLine(text) {
@@ -1124,6 +1280,10 @@
                 pointer-events: auto;
             }
 
+            #chartcheck-panel .chartcheck-copy-row {
+                grid-column: 1 / -1;
+            }
+
             #chartcheck-panel .chartcheck-status {
                 flex: 0 0 auto;
                 padding: 14px 18px;
@@ -1335,6 +1495,30 @@
             list.appendChild(row);
         });
 
+        const copyRow = document.createElement('div');
+        copyRow.className = 'chartcheck-help-row chartcheck-copy-row';
+
+        const copyLabel = document.createElement('div');
+        copyLabel.className = 'chartcheck-help-name';
+        copyLabel.textContent = 'Copy Name';
+
+        const copyButton = document.createElement('button');
+        copyButton.type = 'button';
+        copyButton.className = 'chartcheck-help-btn';
+        copyButton.textContent = 'Copy';
+        copyButton.title = 'Copy the current patient name';
+        copyButton.setAttribute('aria-label', 'Copy Name');
+
+        copyButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            copyCurrentPatientName();
+        });
+
+        copyRow.appendChild(copyLabel);
+        copyRow.appendChild(copyButton);
+        list.appendChild(copyRow);
+
         const status = document.createElement('div');
         status.className = 'chartcheck-status';
 
@@ -1374,6 +1558,7 @@
 
     function refreshPatientSiteGray() {
         applyPatientSiteGray(detectPatientSite());
+        maybeAutoCopyPatientName();
     }
 
     // Opening always shows the full panel (hotkey list included).
