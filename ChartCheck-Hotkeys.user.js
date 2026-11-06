@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.20
+// @version      3.21
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -65,16 +65,16 @@
     // ============================================================
     // Floating window
     // One panel: version title, hotkey list, then status.
-    // It starts hidden so the collapsed title/status strip is not
-    // left on the chart. Alt+L or LDH opens the full panel with the
-    // hotkey list expanded, and hides it again. While it is hidden,
+    // It starts visible with the hotkey list expanded, not as the
+    // collapsed title/status strip. Alt+L or LDH hides that full
+    // panel and shows it again the same way. While it is hidden,
     // nothing from this script is visible.
     // ============================================================
 
     let panel;
     let statusEl;
     let helpList;
-    let panelHidden = true;
+    let panelHidden = false;
 
     function updateOverlay() {
         if (!statusEl) return;
@@ -1252,10 +1252,10 @@
 
         const root = document.createElement('div');
         root.id = 'chartcheck-panel';
-        root.classList.add('chartcheck-hidden');
+        root.classList.add('chartcheck-expanded');
         root.setAttribute('role', 'dialog');
         root.setAttribute('aria-label', 'ChartCheck Hotkeys');
-        root.setAttribute('aria-hidden', 'true');
+        root.setAttribute('aria-hidden', 'false');
 
         const title = document.createElement('div');
         title.className = 'chartcheck-title';
@@ -1287,7 +1287,7 @@
 
         const list = document.createElement('div');
         list.className = 'chartcheck-help-list';
-        list.setAttribute('aria-hidden', 'true');
+        list.setAttribute('aria-hidden', 'false');
 
         orderedHelpActions().forEach(action => {
             const row = document.createElement('div');
