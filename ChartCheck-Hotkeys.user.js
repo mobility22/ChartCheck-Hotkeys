@@ -746,7 +746,7 @@
             run: openFirstFail
         },
         {
-            name: 'Fail box',
+            name: 'Fix',
             button: 'F',
             shortcut: 'Alt+F',
             run: clickFirstFailedUnchecked
