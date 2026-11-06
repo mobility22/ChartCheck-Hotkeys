@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.14
+// @version      3.15
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -63,35 +63,16 @@
     }
 
     // ============================================================
-    // Status Overlay
+    // Floating window
+    // One panel: version title, hotkey list, then status.
     // ============================================================
 
-    let overlay;
-
-    function createOverlay() {
-        overlay = document.createElement('div');
-
-        overlay.style.cssText = `
-            position:fixed;
-            bottom:10px;
-            right:10px;
-            z-index:999999;
-            background:rgba(0,0,0,0.85);
-            color:#00ff66;
-            font-family:monospace;
-            font-size:20px;
-            padding:14px 28px;
-            border-radius:8px;
-            pointer-events:none;
-            min-width:160px;
-        `;
-
-        document.body.appendChild(overlay);
-        updateOverlay();
-    }
+    let panel;
+    let statusEl;
+    let helpList;
 
     function updateOverlay() {
-        if (!overlay) return;
+        if (!statusEl) return;
 
         let statusText = 'ON';
         let statusColor = '#00ff66';
@@ -107,14 +88,11 @@
             statusColor = '#66ccff';
         }
 
-        overlay.innerHTML = `
-        <b>ChartCheck v${SCRIPT_VERSION}</b><br>
-        Auto Review:
-        <span style="color:${statusColor}">
-            ${statusText}
-        </span><br>
-        Count: ${autoReviewCount}
-    `;
+        statusEl.innerHTML =
+            'Auto Review: ' +
+            '<span style="color:' + statusColor + '">' +
+            statusText +
+            '</span><br>Count: ' + autoReviewCount;
     }
 
     // ============================================================
@@ -646,7 +624,7 @@
 
     // ============================================================
     // Actions
-    // Hotkeys and help-panel buttons call these same functions.
+    // Hotkeys and the letter buttons call these same functions.
     // ============================================================
 
     function goBack() {
@@ -729,10 +707,8 @@
     }
 
     // ============================================================
-    // Help Panel
+    // Hotkey list inside the floating window
     // ============================================================
-
-    let helpPanel;
 
     // Keyword labels only. Full behavior:
     // S load the next patient, Z go back, A approve once,
@@ -742,7 +718,8 @@
     // R slow review until FAIL (same stop, CONFIG.slowReviewDelay pause),
     // E nonstop slow review: keep loading the next patient past FAIL
     //   and do not click the FAIL link,
-    // Ctrl+Shift+R auto-approve until FAIL, X stop, H toggle this panel.
+    // Ctrl+Shift+R auto-approve until FAIL, X stop,
+    // H expands or collapses the hotkey list in this window.
     const HELP_ACTIONS = [
         {
             name: 'Next',
@@ -850,55 +827,72 @@
         return actions;
     }
 
-    function installHelpStyles() {
-        if (document.getElementById('chartcheck-help-style')) return;
+    function installPanelStyles() {
+        if (document.getElementById('chartcheck-panel-style')) return;
 
         const style = document.createElement('style');
-        style.id = 'chartcheck-help-style';
+        style.id = 'chartcheck-panel-style';
         style.textContent = `
-            #chartcheck-help-panel {
+            #chartcheck-panel {
                 position: fixed;
-                top: 8px;
-                left: 8px;
+                right: 10px;
+                bottom: 10px;
                 z-index: 1000000;
-                display: none;
+                display: flex;
                 flex-direction: column;
                 width: max-content;
-                max-width: calc(100vw - 16px);
-                max-height: calc(100vh - 16px);
+                max-width: calc(100vw - 20px);
                 background: rgba(0, 0, 0, 0.92);
-                color: #e6e6e6;
+                color: #00ff66;
                 font-family: monospace;
-                font-size: 11px;
-                line-height: 1.15;
                 border: 1px solid #00ff66;
-                border-radius: 4px;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-                pointer-events: auto;
+                border-radius: 8px;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
                 overflow: hidden;
+                pointer-events: none;
             }
 
-            #chartcheck-help-panel .chartcheck-help-title {
+            #chartcheck-panel .chartcheck-title {
                 flex: 0 0 auto;
-                padding: 2px 7px;
+                padding: 8px 14px;
                 background: #00ff66;
                 color: #04140c;
                 font-weight: bold;
-                font-size: 11px;
+                font-size: 18px;
                 line-height: 1.2;
+                white-space: nowrap;
                 cursor: move;
                 user-select: none;
                 -webkit-user-select: none;
-            }
-
-            #chartcheck-help-panel .chartcheck-help-list {
-                display: grid;
-                grid-template-columns: max-content max-content;
-                overflow: auto;
                 pointer-events: auto;
             }
 
-            #chartcheck-help-panel .chartcheck-help-row {
+            #chartcheck-panel .chartcheck-help-list {
+                display: none;
+                grid-template-columns: max-content max-content;
+                max-height: calc(100vh - 180px);
+                overflow: auto;
+                color: #e6e6e6;
+                font-size: 11px;
+                line-height: 1.15;
+                pointer-events: auto;
+            }
+
+            #chartcheck-panel.chartcheck-expanded .chartcheck-help-list {
+                display: grid;
+            }
+
+            #chartcheck-panel .chartcheck-status {
+                flex: 0 0 auto;
+                padding: 12px 16px;
+                font-size: 20px;
+                line-height: 1.3;
+                white-space: nowrap;
+                border-top: 1px solid rgba(0, 255, 102, 0.45);
+                pointer-events: none;
+            }
+
+            #chartcheck-panel .chartcheck-help-row {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
@@ -908,27 +902,27 @@
                 pointer-events: auto;
             }
 
-            #chartcheck-help-panel .chartcheck-help-row:nth-child(odd):not(.chartcheck-help-span) {
+            #chartcheck-panel .chartcheck-help-row:nth-child(odd):not(.chartcheck-help-span) {
                 border-right: 1px solid rgba(0, 255, 102, 0.18);
             }
 
-            #chartcheck-help-panel .chartcheck-help-span {
+            #chartcheck-panel .chartcheck-help-span {
                 grid-column: 1 / -1;
                 justify-content: flex-start;
                 gap: 8px;
             }
 
-            #chartcheck-help-panel .chartcheck-help-span .chartcheck-help-name {
+            #chartcheck-panel .chartcheck-help-span .chartcheck-help-name {
                 flex: 0 0 auto;
             }
 
-            #chartcheck-help-panel .chartcheck-help-name {
+            #chartcheck-panel .chartcheck-help-name {
                 flex: 1 1 auto;
                 min-width: 0;
                 white-space: nowrap;
             }
 
-            #chartcheck-help-panel .chartcheck-help-btn {
+            #chartcheck-panel .chartcheck-help-btn {
                 flex: 0 0 auto;
                 min-width: 3.4em;
                 margin: 0;
@@ -947,8 +941,8 @@
                 pointer-events: auto;
             }
 
-            #chartcheck-help-panel .chartcheck-help-btn:hover,
-            #chartcheck-help-panel .chartcheck-help-btn:focus {
+            #chartcheck-panel .chartcheck-help-btn:hover,
+            #chartcheck-panel .chartcheck-help-btn:focus {
                 background: #00ff66;
                 color: #04140c;
             }
@@ -958,12 +952,23 @@
     }
 
     function helpIsOpen() {
-        if (!helpPanel) return false;
-
-        return window.getComputedStyle(helpPanel).display !== 'none';
+        return !!(panel && panel.classList.contains('chartcheck-expanded'));
     }
 
-    function makeHelpDraggable(panel, handle) {
+    function clampPanel() {
+        if (!panel || panel.style.left === '') return;
+
+        const rect = panel.getBoundingClientRect();
+        const maxLeft = Math.max(0, window.innerWidth - rect.width);
+        const maxTop = Math.max(0, window.innerHeight - rect.height);
+        const left = Math.min(Math.max(0, rect.left), maxLeft);
+        const top = Math.min(Math.max(0, rect.top), maxTop);
+
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+    }
+
+    function makePanelDraggable(root, handle) {
         let dragging = false;
         let offsetX = 0;
         let offsetY = 0;
@@ -971,13 +976,15 @@
         function onMove(e) {
             if (!dragging) return;
 
-            const maxLeft = Math.max(0, window.innerWidth - 48);
-            const maxTop = Math.max(0, window.innerHeight - 32);
+            const width = root.offsetWidth;
+            const height = root.offsetHeight;
+            const maxLeft = Math.max(0, window.innerWidth - width);
+            const maxTop = Math.max(0, window.innerHeight - height);
             const left = Math.min(Math.max(0, e.clientX - offsetX), maxLeft);
             const top = Math.min(Math.max(0, e.clientY - offsetY), maxTop);
 
-            panel.style.left = left + 'px';
-            panel.style.top = top + 'px';
+            root.style.left = left + 'px';
+            root.style.top = top + 'px';
             e.preventDefault();
         }
 
@@ -994,14 +1001,14 @@
         handle.addEventListener('mousedown', (e) => {
             if (e.button !== 0) return;
 
-            const rect = panel.getBoundingClientRect();
+            const rect = root.getBoundingClientRect();
 
             offsetX = e.clientX - rect.left;
             offsetY = e.clientY - rect.top;
-            panel.style.right = 'auto';
-            panel.style.bottom = 'auto';
-            panel.style.left = rect.left + 'px';
-            panel.style.top = rect.top + 'px';
+            root.style.right = 'auto';
+            root.style.bottom = 'auto';
+            root.style.left = rect.left + 'px';
+            root.style.top = rect.top + 'px';
             dragging = true;
 
             document.addEventListener('mousemove', onMove);
@@ -1010,23 +1017,24 @@
         });
     }
 
-    function createHelpPanel() {
-        if (helpPanel || !document.body) return;
+    function createOverlay() {
+        if (panel || !document.body) return;
 
-        installHelpStyles();
+        installPanelStyles();
 
-        const panel = document.createElement('div');
-        panel.id = 'chartcheck-help-panel';
-        panel.setAttribute('role', 'dialog');
-        panel.setAttribute('aria-label', 'ChartCheck Hotkeys');
-        panel.style.display = 'none';
+        const root = document.createElement('div');
+        root.id = 'chartcheck-panel';
+        root.setAttribute('role', 'dialog');
+        root.setAttribute('aria-label', 'ChartCheck Hotkeys');
 
         const title = document.createElement('div');
-        title.className = 'chartcheck-help-title';
-        title.textContent = 'Hotkeys';
+        title.className = 'chartcheck-title';
+        title.textContent = 'ChartCheck v' + SCRIPT_VERSION;
+        title.title = 'Drag to move';
 
         const list = document.createElement('div');
         list.className = 'chartcheck-help-list';
+        list.setAttribute('aria-hidden', 'true');
 
         orderedHelpActions().forEach(action => {
             const row = document.createElement('div');
@@ -1058,28 +1066,43 @@
             list.appendChild(row);
         });
 
-        panel.appendChild(title);
-        panel.appendChild(list);
-        panel.addEventListener('mousedown', (event) => event.stopPropagation());
-        panel.addEventListener('click', (event) => event.stopPropagation());
-        makeHelpDraggable(panel, title);
+        const status = document.createElement('div');
+        status.className = 'chartcheck-status';
 
-        helpPanel = panel;
-        document.body.appendChild(panel);
+        root.appendChild(title);
+        root.appendChild(list);
+        root.appendChild(status);
+        root.addEventListener('mousedown', (event) => event.stopPropagation());
+        root.addEventListener('click', (event) => event.stopPropagation());
+        makePanelDraggable(root, title);
+
+        panel = root;
+        helpList = list;
+        statusEl = status;
+        document.body.appendChild(root);
+        updateOverlay();
     }
 
-    function ensureHelpPanel() {
-        if (!helpPanel) {
-            createHelpPanel();
+    function ensureOverlay() {
+        if (!panel) {
+            createOverlay();
         }
     }
 
     function toggleHelpPanel() {
-        ensureHelpPanel();
+        ensureOverlay();
 
-        if (!helpPanel) return;
+        if (!panel) return;
 
-        helpPanel.style.display = helpIsOpen() ? 'none' : 'flex';
+        panel.classList.toggle('chartcheck-expanded');
+
+        if (helpList) {
+            helpList.setAttribute('aria-hidden', helpIsOpen() ? 'false' : 'true');
+        }
+
+        if (panel.style.left) {
+            clampPanel();
+        }
     }
 
     // ============================================================
@@ -1109,7 +1132,7 @@
 
         const key = e.key.toLowerCase();
 
-        // Hotkeys always run, whether or not the help panel is open.
+        // Hotkeys always run, whether the hotkey list is expanded or collapsed.
 
         if (e.altKey && key === 's') {
             e.preventDefault();
@@ -1183,7 +1206,6 @@
 
     window.addEventListener('load', () => {
         createOverlay();
-        ensureHelpPanel();
     });
 
     document.addEventListener('keydown', handleHotkeys);
