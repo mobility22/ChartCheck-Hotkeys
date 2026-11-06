@@ -8,7 +8,7 @@ The line under the patient name is the center, such as "Roseville Cancer Center,
 
 Auto-review and auto-approve show Roseville Count and Rancho Count instead of one combined count. Each chart is counted for the center line on screen before the next patient loads. A center line that is neither Roseville nor Rancho is not added to either count. Both counts reset to zero when a new auto-review or auto-approve run starts.
 
-When the current patient's MRN is shown on the chart banner, the script copies that MRN once for pasting into ARIA. It prefers an MRN label in the banner. If there is no label, it uses the parenthetical identifier on that patient's name heading, as displayed text, so leading zeros stay. The sidebar id and the URL id are not copied. A banner that still belongs to the previous patient is skipped. The same patient does not trigger another copy. Nothing about the copy is added to the panel. A failed clipboard write is not treated as success.
+When the current patient's MRN is shown on the chart banner, the script copies that MRN once for pasting into ARIA. It prefers an MRN label in that banner, above the center line. If there is no label, it uses the single parenthetical on that name heading only. Leading zeros stay. The sidebar id and the URL id are not copied. After a patient switch, the previous banner is not copied, even when the new patient has the same name, until the heading or the MRN label actually changes. A label that is still the previous value is not replaced by guessing from a parenthetical. The same patient does not trigger another copy. Nothing about the copy is added to the panel. A failed clipboard write is retried a few times and is not treated as success.
 
 ## Hotkeys
 
