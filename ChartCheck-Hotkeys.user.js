@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.16
+// @version      3.17
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -746,7 +746,7 @@
             run: openFirstFail
         },
         {
-            name: 'Fail box',
+            name: 'Fix',
             button: 'F',
             shortcut: 'Alt+F',
             run: clickFirstFailedUnchecked
@@ -776,7 +776,7 @@
             run: applyRcoSbrt
         },
         {
-            name: 'Review',
+            name: 'Quick Review',
             button: 'C',
             shortcut: 'Alt+C',
             run: startAutoReview
@@ -788,7 +788,7 @@
             run: startSlowAutoReview
         },
         {
-            name: 'Nonstop review',
+            name: 'NS Review',
             button: 'E',
             shortcut: 'Alt+E',
             run: startSlowNonstopReview
