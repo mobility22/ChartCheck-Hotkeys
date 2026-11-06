@@ -1,6 +1,6 @@
 # ChartCheck Hotkeys
 
-Tampermonkey userscript (version 3.16) that adds keyboard shortcuts to ChartCheck. It loads the next patient, applies check templates, jumps to failed checks, and can walk the queue automatically. One floating window shows the version as its title. Alt+H expands or collapses the hotkey list in the middle of that window. Auto-review status and the chart count stay visible under the list.
+Tampermonkey userscript (version 3.17) that adds keyboard shortcuts to ChartCheck. It loads the next patient, applies check templates, jumps to failed checks, and can walk the queue automatically. One floating window shows the version as its title. Alt+H expands or collapses the hotkey list in the middle of that window. Auto-review status and the chart count stay visible under the list.
 
 Auto-review and auto-approve stop on a FAIL result and open that FAIL link. Alt+E is slow nonstop review: it pauses on each chart for the same interval as Alt+R, then loads the next patient when the chart has a FAIL, and leaves the FAIL link unopened. It stops when the queue ends, the patient does not change, or you press Alt+X. These loops wait until the new chart's patient id (or patient name, when no id is available) has updated before they look for FAIL. Alt+X stops any of them immediately, before another Approve or Load Next click. Auto-approve stops instead of approving again when that id or name never changes. Shortcuts do nothing while you are typing in an input, textarea, select, or contenteditable field, and they ignore key auto-repeat. Alt+H expands or collapses a compact two-column keyword list in that same window. Each action has a keyword label and a letter button. Shortcuts keep working while that list is expanded or collapsed. Drag the version title to move the window.
 
@@ -30,4 +30,4 @@ Auto-review and auto-approve stop on a FAIL result and open that FAIL link. Alt+
 2. Open the raw script, which is also the script's update URL.
 3. Confirm **Install** in the Tampermonkey dialog.
 
-Tampermonkey then installs version 3.16 and picks up later updates from that raw script. The script runs only on the ChartCheck host it is matched to.
+Tampermonkey then installs version 3.17 and picks up later updates from that raw script. The script runs only on the ChartCheck host it is matched to.

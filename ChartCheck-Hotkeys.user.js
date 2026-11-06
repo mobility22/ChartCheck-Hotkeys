@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.16
+// @version      3.17
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -712,7 +712,7 @@
 
     // Keyword labels only. Full behavior:
     // S load the next patient, Z go back, A approve once,
-    // D open the first FAIL link, F click the first failed unchecked box,
+    // D open the first FAIL link, F = Fix: click the first failed unchecked box,
     // Q ROS_Standard, W ROS_SBRT/SRS, Shift+Q RCO_Standard, Shift+W RCO_SBRT,
     // C fast review until FAIL (clicks the FAIL link and stops),
     // R slow review until FAIL (same stop, CONFIG.slowReviewDelay pause),
@@ -746,7 +746,7 @@
             run: openFirstFail
         },
         {
-            name: 'Fail box',
+            name: 'Fix',
             button: 'F',
             shortcut: 'Alt+F',
             run: clickFirstFailedUnchecked
@@ -819,7 +819,7 @@
     // Slow review | Review
     // ROS Standard | ROS SBRT
     // RCO Standard | RCO SBRT
-    // Fail link | Fail box
+    // Fail link | Fix
     // Back | Stop
     // Help
     function orderedHelpActions() {
