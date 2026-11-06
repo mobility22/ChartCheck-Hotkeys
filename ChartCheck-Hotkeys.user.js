@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.21
+// @version      3.22
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -67,9 +67,9 @@
     // ============================================================
     // Floating window
     // One panel: version title, hotkey list, then status.
-    // It starts visible with the hotkey list expanded, not as the
-    // collapsed title/status strip. Alt+L or LDH hides that full
-    // panel and shows it again the same way. While it is hidden,
+    // The list is always part of the window. There is no collapsed
+    // title/status strip. Alt+L, the Hide button, or LDH hides that
+    // full panel and shows it again the same way. While it is hidden,
     // nothing from this script is visible.
     // ============================================================
 
@@ -911,8 +911,8 @@
     // E nonstop slow review: keep loading the next patient past FAIL
     //   and do not click the FAIL link,
     // Ctrl+Shift+R auto-approve until FAIL, X stop,
-    // H expands or collapses the hotkey list in this window.
-    // L (LDH) hides or restores this same window.
+    // L hides or restores this same window. The grid button beside
+    // Stop does that too. LDH on the title does the same.
     // Alt+Z still goes back; Back is not shown in this panel.
     const HELP_ACTIONS = [
         {
@@ -998,21 +998,21 @@
             run: stopAuto
         },
         {
-            name: 'Help',
-            button: 'H',
-            shortcut: 'Alt+H',
-            run: toggleHelpPanel
+            name: 'Hide',
+            button: 'L',
+            shortcut: 'Alt+L',
+            run: togglePanelVisibility
         }
     ];
 
-    // Fixed 2-column reading order. Help fills the slot Back used to occupy.
+    // Fixed 2-column reading order. Hide fills the slot Back used to occupy.
     // Next | Approve
     // Auto-approve | Nonstop review
     // Slow review | Review
     // ROS Standard | ROS SBRT
     // RCO Standard | RCO SBRT
     // Fail link | Fail box
-    // Help | Stop
+    // Hide | Stop
     function orderedHelpActions() {
         const buttonOrder = [
             'S',
@@ -1027,7 +1027,7 @@
             '⇧W',
             'D',
             'F',
-            'H',
+            'L',
             'X'
         ];
         const byButton = new Map(HELP_ACTIONS.map(action => [action.button, action]));
@@ -1114,7 +1114,7 @@
             }
 
             #chartcheck-panel .chartcheck-help-list {
-                display: none;
+                display: grid;
                 grid-template-columns: max-content max-content;
                 max-height: calc(100vh - 210px);
                 overflow: auto;
@@ -1122,10 +1122,6 @@
                 font-size: 13px;
                 line-height: 1.2;
                 pointer-events: auto;
-            }
-
-            #chartcheck-panel.chartcheck-expanded .chartcheck-help-list {
-                display: grid;
             }
 
             #chartcheck-panel .chartcheck-status {
@@ -1204,10 +1200,6 @@
         (document.head || document.documentElement).appendChild(style);
     }
 
-    function helpIsOpen() {
-        return !!(panel && panel.classList.contains('chartcheck-expanded'));
-    }
-
     function clampPanel() {
         if (!panel || panel.style.left === '') return;
 
@@ -1277,7 +1269,6 @@
 
         const root = document.createElement('div');
         root.id = 'chartcheck-panel';
-        root.classList.add('chartcheck-expanded');
         root.setAttribute('role', 'dialog');
         root.setAttribute('aria-label', 'ChartCheck Hotkeys');
         root.setAttribute('aria-hidden', 'false');
@@ -1385,22 +1376,14 @@
         applyPatientSiteGray(detectPatientSite());
     }
 
-    function syncHelpAria() {
-        if (!helpList) return;
-
-        helpList.setAttribute('aria-hidden', helpIsOpen() ? 'false' : 'true');
-    }
-
-    // Opening always shows the full panel (help list included),
-    // never the collapsed title-and-status strip.
+    // Opening always shows the full panel (hotkey list included).
+    // There is no collapsed title-and-status strip.
     function showPanel() {
         if (!panel) return;
 
         panelHidden = false;
         panel.classList.remove('chartcheck-hidden');
-        panel.classList.add('chartcheck-expanded');
         panel.setAttribute('aria-hidden', 'false');
-        syncHelpAria();
         refreshPatientSiteGray();
 
         if (panel.style.left) {
@@ -1416,26 +1399,8 @@
         panel.setAttribute('aria-hidden', 'true');
     }
 
-    function toggleHelpPanel() {
-        ensureOverlay();
-
-        if (!panel) return;
-
-        if (panelHidden) {
-            showPanel();
-            return;
-        }
-
-        panel.classList.toggle('chartcheck-expanded');
-        syncHelpAria();
-
-        if (panel.style.left) {
-            clampPanel();
-        }
-    }
-
-    // LDH and Alt+L hide and show the one panel. Hidden leaves
-    // no visible ChartCheck widget on the page.
+    // LDH, Alt+L, and the Hide button hide and show the one panel.
+    // Hidden leaves no visible ChartCheck widget on the page.
     function togglePanelVisibility() {
         ensureOverlay();
 
@@ -1471,8 +1436,6 @@
         if (path.some(isEditableTarget)) return;
 
         const key = e.key.toLowerCase();
-
-        // Hotkeys always run, whether the hotkey list is expanded or collapsed.
 
         if (e.altKey && key === 's') {
             e.preventDefault();
@@ -1532,11 +1495,6 @@
 
         if (e.altKey && key === 'x') {
             stopAuto();
-        }
-
-        if (e.altKey && key === 'h') {
-            e.preventDefault();
-            toggleHelpPanel();
         }
 
         if (e.altKey && !e.shiftKey && !e.ctrlKey && key === 'l') {
