@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.17
+// @version      3.18
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -711,7 +711,7 @@
     // ============================================================
 
     // Keyword labels only. Full behavior:
-    // S load the next patient, Z go back, A approve once,
+    // S load the next patient, A approve once,
     // D open the first FAIL link, F click the first failed unchecked box,
     // Q ROS_Standard, W ROS_SBRT/SRS, Shift+Q RCO_Standard, Shift+W RCO_SBRT,
     // C fast review until FAIL (clicks the FAIL link and stops),
@@ -720,18 +720,13 @@
     //   and do not click the FAIL link,
     // Ctrl+Shift+R auto-approve until FAIL, X stop,
     // H expands or collapses the hotkey list in this window.
+    // Alt+Z still goes back; Back is not shown in this panel.
     const HELP_ACTIONS = [
         {
             name: 'Next',
             button: 'S',
             shortcut: 'Alt+S',
             run: loadNextPatient
-        },
-        {
-            name: 'Back',
-            button: 'Z',
-            shortcut: 'Alt+Z',
-            run: goBack
         },
         {
             name: 'Approve',
@@ -813,15 +808,14 @@
         }
     ];
 
-    // Fixed 2-column reading order. Help stays last and spans that row.
+    // Fixed 2-column reading order. Help fills the slot Back used to occupy.
     // Next | Approve
     // Auto-approve | Nonstop review
     // Slow review | Review
     // ROS Standard | ROS SBRT
     // RCO Standard | RCO SBRT
     // Fail link | Fail box
-    // Back | Stop
-    // Help
+    // Help | Stop
     function orderedHelpActions() {
         const buttonOrder = [
             'S',
@@ -836,9 +830,8 @@
             '⇧W',
             'D',
             'F',
-            'Z',
-            'X',
-            'H'
+            'H',
+            'X'
         ];
         const byButton = new Map(HELP_ACTIONS.map(action => [action.button, action]));
 
@@ -928,18 +921,8 @@
                 pointer-events: auto;
             }
 
-            #chartcheck-panel .chartcheck-help-row:nth-child(odd):not(.chartcheck-help-span) {
+            #chartcheck-panel .chartcheck-help-row:nth-child(odd) {
                 border-right: 1px solid rgba(0, 255, 102, 0.18);
-            }
-
-            #chartcheck-panel .chartcheck-help-span {
-                grid-column: 1 / -1;
-                justify-content: flex-start;
-                gap: 8px;
-            }
-
-            #chartcheck-panel .chartcheck-help-span .chartcheck-help-name {
-                flex: 0 0 auto;
             }
 
             #chartcheck-panel .chartcheck-help-name {
@@ -1065,10 +1048,6 @@
         orderedHelpActions().forEach(action => {
             const row = document.createElement('div');
             row.className = 'chartcheck-help-row';
-
-            if (action.button === 'H') {
-                row.classList.add('chartcheck-help-span');
-            }
 
             const name = document.createElement('div');
             name.className = 'chartcheck-help-name';
