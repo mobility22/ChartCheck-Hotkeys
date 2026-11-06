@@ -1,6 +1,6 @@
 # ChartCheck Hotkeys
 
-Tampermonkey userscript (version 3.18) that adds keyboard shortcuts to ChartCheck. It loads the next patient, applies check templates, jumps to failed checks, and can walk the queue automatically. One floating window shows the version as its title. Alt+H expands or collapses the hotkey list in the middle of that window. Auto-review status and the chart count stay visible under the list.
+Tampermonkey userscript (version 3.19) that adds keyboard shortcuts to ChartCheck. It loads the next patient, applies check templates, jumps to failed checks, and can walk the queue automatically. One floating window shows the version as its title. Alt+H expands or collapses the hotkey list in the middle of that window. Auto-review status and the chart count stay visible under the list. LDH on the title, and Alt+L, hide that window and show it again. While it is hidden, no second panel is left on the page.
 
 Auto-review and auto-approve stop on a FAIL result and open that FAIL link. Alt+E is slow nonstop review: it pauses on each chart for the same interval as Alt+R, then loads the next patient when the chart has a FAIL, and leaves the FAIL link unopened. It stops when the queue ends, the patient does not change, or you press Alt+X. These loops wait until the new chart's patient id (or patient name, when no id is available) has updated before they look for FAIL. Alt+X stops any of them immediately, before another Approve or Load Next click. Auto-approve stops instead of approving again when that id or name never changes. Shortcuts do nothing while you are typing in an input, textarea, select, or contenteditable field, and they ignore key auto-repeat. Alt+H expands or collapses a compact two-column keyword list in that same window. Each action has a keyword label and a letter button. Shortcuts keep working while that list is expanded or collapsed. Drag the version title to move the window.
 
@@ -23,6 +23,7 @@ Auto-review and auto-approve stop on a FAIL result and open that FAIL link. Alt+
 | Ctrl+Shift+R | Start auto-approve after a confirm dialog. Repeatedly clicks **Approve and Load Next** until a FAIL is found, the queue is exhausted, the patient does not change, or you stop it. Press Ctrl+Shift+R again to stop without a second dialog |
 | Alt+X | Stop auto-review, nonstop review, or auto-approve immediately |
 | Alt+H | Expand or collapse the hotkey list in the floating window. Each action has a keyword label and a letter button that runs that action. Help sits beside Stop, in the slot Back used to occupy. The version stays on top, and auto-review status and the count stay below the list |
+| Alt+L | LDH. Hide or show the ChartCheck window. The LDH button on the title does the same. Help buttons, status, and count are unchanged when the window is shown again |
 
 ## Install
 
@@ -30,4 +31,4 @@ Auto-review and auto-approve stop on a FAIL result and open that FAIL link. Alt+
 2. Open the raw script, which is also the script's update URL.
 3. Confirm **Install** in the Tampermonkey dialog.
 
-Tampermonkey then installs version 3.18 and picks up later updates from that raw script. The script runs only on the ChartCheck host it is matched to.
+Tampermonkey then installs version 3.19 and picks up later updates from that raw script. The script runs only on the ChartCheck host it is matched to.

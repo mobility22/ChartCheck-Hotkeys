@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.18
+// @version      3.19
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
@@ -65,11 +65,14 @@
     // ============================================================
     // Floating window
     // One panel: version title, hotkey list, then status.
+    // LDH (title button and Alt+L) hides and restores that panel.
+    // No second overlay is created while it is hidden.
     // ============================================================
 
     let panel;
     let statusEl;
     let helpList;
+    let panelHidden = false;
 
     function updateOverlay() {
         if (!statusEl) return;
@@ -720,6 +723,7 @@
     //   and do not click the FAIL link,
     // Ctrl+Shift+R auto-approve until FAIL, X stop,
     // H expands or collapses the hotkey list in this window.
+    // L (LDH) hides or restores this same window.
     // Alt+Z still goes back; Back is not shown in this panel.
     const HELP_ACTIONS = [
         {
@@ -871,8 +875,16 @@
                 pointer-events: none;
             }
 
+            #chartcheck-panel.chartcheck-hidden {
+                display: none;
+            }
+
             #chartcheck-panel .chartcheck-title {
                 flex: 0 0 auto;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
                 padding: 8px 14px;
                 background: #00ff66;
                 color: #04140c;
@@ -884,6 +896,28 @@
                 user-select: none;
                 -webkit-user-select: none;
                 pointer-events: auto;
+            }
+
+            #chartcheck-panel .chartcheck-ldh {
+                flex: 0 0 auto;
+                margin: 0;
+                padding: 0 6px;
+                font-family: monospace;
+                font-size: 12px;
+                font-weight: bold;
+                line-height: 1.4;
+                color: #04140c;
+                background: transparent;
+                border: 1px solid #04140c;
+                border-radius: 3px;
+                cursor: pointer;
+                pointer-events: auto;
+            }
+
+            #chartcheck-panel .chartcheck-ldh:hover,
+            #chartcheck-panel .chartcheck-ldh:focus {
+                background: #04140c;
+                color: #00ff66;
             }
 
             #chartcheck-panel .chartcheck-help-list {
@@ -1038,8 +1072,31 @@
 
         const title = document.createElement('div');
         title.className = 'chartcheck-title';
-        title.textContent = 'ChartCheck v' + SCRIPT_VERSION;
         title.title = 'Drag to move';
+
+        const titleText = document.createElement('span');
+        titleText.className = 'chartcheck-title-text';
+        titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION;
+
+        const ldh = document.createElement('button');
+        ldh.type = 'button';
+        ldh.className = 'chartcheck-ldh';
+        ldh.textContent = 'LDH';
+        ldh.title = 'Hide this panel. Alt+L shows it again.';
+        ldh.setAttribute('aria-label', 'LDH');
+
+        ldh.addEventListener('mousedown', (event) => {
+            event.stopPropagation();
+        });
+
+        ldh.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            togglePanelVisibility();
+        });
+
+        title.appendChild(titleText);
+        title.appendChild(ldh);
 
         const list = document.createElement('div');
         list.className = 'chartcheck-help-list';
@@ -1106,6 +1163,22 @@
         }
 
         if (panel.style.left) {
+            clampPanel();
+        }
+    }
+
+    // LDH hides and restores the one ChartCheck panel. It does not
+    // create a second element to stand in while the panel is hidden.
+    function togglePanelVisibility() {
+        ensureOverlay();
+
+        if (!panel) return;
+
+        panelHidden = !panelHidden;
+        panel.classList.toggle('chartcheck-hidden', panelHidden);
+        panel.setAttribute('aria-hidden', panelHidden ? 'true' : 'false');
+
+        if (!panelHidden && panel.style.left) {
             clampPanel();
         }
     }
@@ -1202,6 +1275,11 @@
         if (e.altKey && key === 'h') {
             e.preventDefault();
             toggleHelpPanel();
+        }
+
+        if (e.altKey && !e.shiftKey && !e.ctrlKey && key === 'l') {
+            e.preventDefault();
+            togglePanelVisibility();
         }
     }
 
