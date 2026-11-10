@@ -1,6 +1,6 @@
 # ChartCheck Hotkeys
 
-Tampermonkey userscript (version 3.24) that adds keyboard shortcuts to ChartCheck. It loads the next patient, applies check templates, jumps to failed checks, and can walk the queue automatically. One floating window shows the version as its title, the hotkey list, and auto-review status. The list is always shown with the window. There is no collapsed title and status strip. Alt+L, the Hide button beside Stop, or LDH on the title hides that full window and shows it again the same way. While it is hidden, nothing from this script is visible.
+Tampermonkey userscript (version 3.25) that adds keyboard shortcuts to ChartCheck. It loads the next patient, applies check templates, jumps to failed checks, and can walk the queue automatically. One floating window shows the version as its title, the hotkey list, and auto-review status. The list is always shown with the window. There is no collapsed title and status strip. Alt+L, the Hide button beside Stop, or LDH on the title hides that full window and shows it again the same way. While it is hidden, nothing from this script is visible.
 
 Auto-review and auto-approve stop on a FAIL result and open that FAIL link. Alt+E is slow nonstop review: it pauses on each chart for the same interval as Alt+R, then loads the next patient when the chart has a FAIL, and leaves the FAIL link unopened. It stops when the queue ends, the patient does not change, or you press Alt+X. These loops wait until the new chart's patient id (or patient name, when no id is available) has updated before they look for FAIL. Alt+X stops any of them immediately, before another Approve or Load Next click. Auto-approve stops instead of approving again when that id or name never changes. Shortcuts do nothing while you are typing in an input, textarea, select, or contenteditable field, and they ignore key auto-repeat. The hotkey list is a compact two-column grid in that same window. Each action has a keyword label and a letter button. Drag the version title to move the window.
 
@@ -23,7 +23,7 @@ When the current patient's MRN is shown on the chart banner, the script copies t
 | Alt+W | Apply template 2 |
 | Shift+Q | Apply template 3 |
 | Shift+W | Apply template 4 |
-| Alt+C | Start auto-review: load the next patient until a FAIL is found |
+| Alt+C | Start auto-review: load the next patient until a FAIL is found. Pressing Alt+C again after it stops resumes: it moves past the FAIL on the current chart and keeps going until the next FAIL |
 | Alt+R | Start slow auto-review: same as Alt+C, but pause on each chart for it to finish loading before the FAIL check |
 | Alt+E | Start slow nonstop review: same pause as Alt+R, then keep loading the next patient through FAIL charts. Leaves the FAIL link unopened. Stops when the queue ends, the patient does not change, or you press Alt+X |
 | Ctrl+Shift+R | Start auto-approve after a confirm dialog. Repeatedly clicks **Approve and Load Next** until a FAIL is found, the queue is exhausted, the patient does not change, or you stop it. Press Ctrl+Shift+R again to stop without a second dialog |
@@ -36,4 +36,4 @@ When the current patient's MRN is shown on the chart banner, the script copies t
 2. Open the raw script, which is also the script's update URL.
 3. Confirm **Install** in the Tampermonkey dialog.
 
-Tampermonkey then installs version 3.24 and picks up later updates from that raw script. The script runs only on the ChartCheck host it is matched to.
+Tampermonkey then installs version 3.25 and picks up later updates from that raw script. The script runs only on the ChartCheck host it is matched to.
