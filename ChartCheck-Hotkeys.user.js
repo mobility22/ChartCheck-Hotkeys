@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.24
+// @version      3.25
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -1028,6 +1028,10 @@
         }
 
         const continueOnFail = options.continueOnFail === true;
+        // Alt+C resumes: a FAIL already on the starting chart was the one
+        // the previous run stopped on, so move past it instead of stopping
+        // again. FAILs on later charts still stop the run.
+        let skipFailOnThisChart = options.skipInitialFail === true;
 
         resetReviewCounts();
         autoReviewMode = continueOnFail ? 'Nonstop' : 'Review';
@@ -1048,8 +1052,12 @@
                 }
 
                 const fail = findFailLinks()[0];
+                const skipThisFail = skipFailOnThisChart;
+                skipFailOnThisChart = false;
 
-                if (fail) {
+                if (fail && skipThisFail && !continueOnFail) {
+                    console.log('Quick Review resuming past the FAIL on the starting chart');
+                } else if (fail) {
                     if (!autoReviewActive) break;
 
                     if (!continueOnFail) {
@@ -1224,7 +1232,7 @@
     }
 
     function startAutoReview() {
-        runLocked(() => reviewUntilFail());
+        runLocked(() => reviewUntilFail(0, { skipInitialFail: true }));
     }
 
     function startSlowAutoReview() {
