@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.29
+// @version      3.30
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -1692,15 +1692,14 @@
                 background: #2a2a2a;
             }
 
-            /* Top and bottom 2px yellow lines across the ROS/RCO 2x2. */
+            /* 2px yellow box around the ROS/RCO 2x2, sized from the cells. */
             #chartcheck-panel .chartcheck-site-frame {
                 position: absolute;
                 box-sizing: border-box;
                 pointer-events: none;
-                border: none;
-                border-top: 2px solid rgba(255, 214, 0, 0.7);
-                border-bottom: 2px solid rgba(255, 214, 0, 0.7);
-                z-index: 1;
+                border: 2px solid rgba(255, 214, 0, 0.7);
+                border-radius: 3px;
+                z-index: 10;
             }
         `;
 
@@ -1770,9 +1769,9 @@
     }
 
     // Union of the four ROS/RCO cell rects, in the wrap's coordinate space.
-    // The overlay uses this box so the frame has real width and height
-    // covering both columns and both rows, not a zero-height grid line.
-    function siteFrameBox(wrapRect, cellRects) {
+    // Left and right are inset so the 2px vertical borders sit inside the
+    // panel content box and are not clipped by the panel edge.
+    function siteFrameBox(wrapRect, cellRects, panelContentRect, inset = 4) {
         if (!cellRects || cellRects.length === 0) return null;
 
         let left = Infinity;
@@ -1786,6 +1785,14 @@
             right = Math.max(right, rect.right);
             bottom = Math.max(bottom, rect.bottom);
         }
+
+        if (panelContentRect) {
+            left = Math.max(left, panelContentRect.left);
+            right = Math.min(right, panelContentRect.right);
+        }
+
+        left += inset;
+        right -= inset;
 
         const width = right - left;
         const height = bottom - top;
@@ -1807,10 +1814,19 @@
 
         if (!wrap) return;
 
+        const panelRect = panel.getBoundingClientRect();
+        const panelContentRect = {
+            left: panelRect.left + panel.clientLeft,
+            right: panelRect.left + panel.clientLeft + panel.clientWidth,
+            top: panelRect.top + panel.clientTop,
+            bottom: panelRect.top + panel.clientTop + panel.clientHeight
+        };
+
         const cells = helpList.querySelectorAll('.chartcheck-site-template');
         const box = siteFrameBox(
             wrap.getBoundingClientRect(),
-            Array.from(cells, cell => cell.getBoundingClientRect())
+            Array.from(cells, cell => cell.getBoundingClientRect()),
+            panelContentRect
         );
 
         if (!box) return;
