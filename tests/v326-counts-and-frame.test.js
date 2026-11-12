@@ -20,8 +20,8 @@ function extract(label, start, end) {
     return src.slice(a, b);
 }
 
-ok('@version 3.27', /@version\s+3\.27\b/.test(src));
-ok('no leftover 3.26', !/\b3\.26\b/.test(src));
+ok('@version 3.28', /@version\s+3\.28\b/.test(src));
+ok('no leftover 3.27', !/\b3\.27\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('loaded log uses SCRIPT_VERSION', src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION} Loaded') || src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION}'));
 ok('grants GM_getValue', /@grant\s+GM_getValue/.test(src));
@@ -62,10 +62,31 @@ ok('no daily or startup site-count auto-reset helper leftover', !src.includes('r
 ok('loads persisted counts at init', /\/\/ Init[\s\S]*loadSiteCounts\(\);[\s\S]*window\.addEventListener\('load'/.test(src));
 
 const buttonOrder = extract('buttonOrder', '        const buttonOrder = [', '        ];');
-ok('ROS/RCO four items are buttons 7-10 (grid rows 4-5)', /'Q',\s*'W',\s*'⇧Q',\s*'⇧W'/.test(buttonOrder));
+ok('ROS/RCO four items are buttons 7-10', /'Q',\s*'W',\s*'⇧Q',\s*'⇧W'/.test(buttonOrder));
 ok('site frame class is created', src.includes("siteFrame.className = 'chartcheck-site-frame'"));
-ok('site frame is 2px yellow and covers grid rows 4-5', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?grid-row:\s*4\s*\/\s*span\s*2;[\s\S]*?border:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);/.test(src));
+ok('site rows get chartcheck-site-template', src.includes("row.classList.add('chartcheck-site-template')"));
+ok('site frame is an absolute 2px yellow overlay', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?border:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);[\s\S]*?border-radius:\s*3px;/.test(src));
+ok('site frame is not grid-positioned', !/#chartcheck-panel \.chartcheck-site-frame\s*\{[^}]*grid-row:/.test(src));
 ok('site frame ignores pointer events', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?pointer-events:\s*none;/.test(src));
+ok('site frame recomputes on resize, scroll, and render', src.includes("window.addEventListener('resize', updateSiteFrame)") && src.includes("list.addEventListener('scroll', updateSiteFrame)") && src.includes('requestAnimationFrame(updateSiteFrame)') && /function refreshPatientSiteGray\([\s\S]*?updateSiteFrame\(\);/.test(src));
+
+const boxStart = src.indexOf('    function siteFrameBox(');
+const boxEnd = src.indexOf('    function updateSiteFrame(');
+ok('siteFrameBox extract', boxStart >= 0 && boxEnd > boxStart);
+const siteFrameBox = new Function(src.slice(boxStart, boxEnd) + '\nreturn siteFrameBox;')();
+const twoByTwo = siteFrameBox(
+    { left: 100, top: 200, right: 300, bottom: 400 },
+    [
+        { left: 100, top: 260, right: 200, bottom: 280 },
+        { left: 200, top: 260, right: 300, bottom: 280 },
+        { left: 100, top: 280, right: 200, bottom: 300 },
+        { left: 200, top: 280, right: 300, bottom: 300 }
+    ]
+);
+ok('frame box spans both columns', !!(twoByTwo && twoByTwo.width === 200 && twoByTwo.left === 0));
+ok('frame box spans both rows', !!(twoByTwo && twoByTwo.height === 40 && twoByTwo.top === 60));
+ok('frame box is not a zero-height line', !!(twoByTwo && twoByTwo.height > 2 && twoByTwo.width > 2));
+ok('empty cells yield no box', siteFrameBox({ left: 0, top: 0 }, []) === null);
 
 // Persist, accumulate, and reset with a mocked GM store.
 const start = src.indexOf('    const SITE_COUNT_KEYS = {');
