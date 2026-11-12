@@ -20,8 +20,8 @@ function extract(label, start, end) {
     return src.slice(a, b);
 }
 
-ok('@version 3.26', /@version\s+3\.26\b/.test(src));
-ok('no leftover 3.25', !/\b3\.25\b/.test(src));
+ok('@version 3.27', /@version\s+3\.27\b/.test(src));
+ok('no leftover 3.26', !/\b3\.26\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('loaded log uses SCRIPT_VERSION', src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION} Loaded') || src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION}'));
 ok('grants GM_getValue', /@grant\s+GM_getValue/.test(src));
@@ -64,7 +64,7 @@ ok('loads persisted counts at init', /\/\/ Init[\s\S]*loadSiteCounts\(\);[\s\S]*
 const buttonOrder = extract('buttonOrder', '        const buttonOrder = [', '        ];');
 ok('ROS/RCO four items are buttons 7-10 (grid rows 4-5)', /'Q',\s*'W',\s*'⇧Q',\s*'⇧W'/.test(buttonOrder));
 ok('site frame class is created', src.includes("siteFrame.className = 'chartcheck-site-frame'"));
-ok('site frame is 1px and covers grid rows 4-5', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?grid-row:\s*4\s*\/\s*span\s*2;[\s\S]*?border:\s*1px solid rgba\(0,\s*255,\s*102,\s*0\.28\);/.test(src));
+ok('site frame is 2px yellow and covers grid rows 4-5', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?grid-row:\s*4\s*\/\s*span\s*2;[\s\S]*?border:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);/.test(src));
 ok('site frame ignores pointer events', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?pointer-events:\s*none;/.test(src));
 
 // Persist, accumulate, and reset with a mocked GM store.
