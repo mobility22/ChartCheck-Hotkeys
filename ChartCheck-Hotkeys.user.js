@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.28
+// @version      3.29
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -1692,13 +1692,14 @@
                 background: #2a2a2a;
             }
 
-            /* 2px yellow box around the ROS/RCO 2x2, sized from the cells. */
+            /* Top and bottom 2px yellow lines across the ROS/RCO 2x2. */
             #chartcheck-panel .chartcheck-site-frame {
                 position: absolute;
                 box-sizing: border-box;
                 pointer-events: none;
-                border: 2px solid rgba(255, 214, 0, 0.7);
-                border-radius: 3px;
+                border: none;
+                border-top: 2px solid rgba(255, 214, 0, 0.7);
+                border-bottom: 2px solid rgba(255, 214, 0, 0.7);
                 z-index: 1;
             }
         `;

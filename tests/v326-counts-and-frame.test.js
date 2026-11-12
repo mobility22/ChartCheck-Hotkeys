@@ -20,8 +20,8 @@ function extract(label, start, end) {
     return src.slice(a, b);
 }
 
-ok('@version 3.28', /@version\s+3\.28\b/.test(src));
-ok('no leftover 3.27', !/\b3\.27\b/.test(src));
+ok('@version 3.29', /@version\s+3\.29\b/.test(src));
+ok('no leftover 3.28', !/\b3\.28\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('loaded log uses SCRIPT_VERSION', src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION} Loaded') || src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION}'));
 ok('grants GM_getValue', /@grant\s+GM_getValue/.test(src));
@@ -65,7 +65,8 @@ const buttonOrder = extract('buttonOrder', '        const buttonOrder = [', '   
 ok('ROS/RCO four items are buttons 7-10', /'Q',\s*'W',\s*'⇧Q',\s*'⇧W'/.test(buttonOrder));
 ok('site frame class is created', src.includes("siteFrame.className = 'chartcheck-site-frame'"));
 ok('site rows get chartcheck-site-template', src.includes("row.classList.add('chartcheck-site-template')"));
-ok('site frame is an absolute 2px yellow overlay', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?border:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);[\s\S]*?border-radius:\s*3px;/.test(src));
+ok('site frame is an absolute overlay with only top and bottom 2px yellow lines', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?border-top:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);[\s\S]*?border-bottom:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);/.test(src));
+ok('site frame has no left or right border and no radius', !/#chartcheck-panel \.chartcheck-site-frame\s*\{[^}]*(border:\s*2px solid|border-left:\s*[^0]|border-right:\s*[^0]|border-radius:\s*[^0])/.test(src));
 ok('site frame is not grid-positioned', !/#chartcheck-panel \.chartcheck-site-frame\s*\{[^}]*grid-row:/.test(src));
 ok('site frame ignores pointer events', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?pointer-events:\s*none;/.test(src));
 ok('site frame recomputes on resize, scroll, and render', src.includes("window.addEventListener('resize', updateSiteFrame)") && src.includes("list.addEventListener('scroll', updateSiteFrame)") && src.includes('requestAnimationFrame(updateSiteFrame)') && /function refreshPatientSiteGray\([\s\S]*?updateSiteFrame\(\);/.test(src));
