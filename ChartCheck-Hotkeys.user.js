@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.27
+// @version      3.28
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -79,6 +79,7 @@
     let panel;
     let statusEl;
     let helpList;
+    let siteFrame;
     let panelHidden = false;
     let trackedIdentity = '';
     let settledObservation = null;
@@ -1571,6 +1572,14 @@
                 color: #00ff66;
             }
 
+            #chartcheck-panel .chartcheck-help-wrap {
+                position: relative;
+                flex: 0 1 auto;
+                max-height: calc(100vh - 210px);
+                overflow: hidden;
+                pointer-events: auto;
+            }
+
             #chartcheck-panel .chartcheck-help-list {
                 display: grid;
                 grid-template-columns: max-content max-content;
@@ -1683,10 +1692,9 @@
                 background: #2a2a2a;
             }
 
-            /* 2px yellow box around the ROS/RCO 2x2 (grid rows 4-5). */
+            /* 2px yellow box around the ROS/RCO 2x2, sized from the cells. */
             #chartcheck-panel .chartcheck-site-frame {
-                grid-column: 1 / span 2;
-                grid-row: 4 / span 2;
+                position: absolute;
                 box-sizing: border-box;
                 pointer-events: none;
                 border: 2px solid rgba(255, 214, 0, 0.7);
@@ -1760,6 +1768,58 @@
         });
     }
 
+    // Union of the four ROS/RCO cell rects, in the wrap's coordinate space.
+    // The overlay uses this box so the frame has real width and height
+    // covering both columns and both rows, not a zero-height grid line.
+    function siteFrameBox(wrapRect, cellRects) {
+        if (!cellRects || cellRects.length === 0) return null;
+
+        let left = Infinity;
+        let top = Infinity;
+        let right = -Infinity;
+        let bottom = -Infinity;
+
+        for (const rect of cellRects) {
+            left = Math.min(left, rect.left);
+            top = Math.min(top, rect.top);
+            right = Math.max(right, rect.right);
+            bottom = Math.max(bottom, rect.bottom);
+        }
+
+        const width = right - left;
+        const height = bottom - top;
+
+        if (!(width > 0) || !(height > 0)) return null;
+
+        return {
+            left: left - wrapRect.left,
+            top: top - wrapRect.top,
+            width: width,
+            height: height
+        };
+    }
+
+    function updateSiteFrame() {
+        if (!siteFrame || !helpList || !panel || panelHidden) return;
+
+        const wrap = siteFrame.parentElement;
+
+        if (!wrap) return;
+
+        const cells = helpList.querySelectorAll('.chartcheck-site-template');
+        const box = siteFrameBox(
+            wrap.getBoundingClientRect(),
+            Array.from(cells, cell => cell.getBoundingClientRect())
+        );
+
+        if (!box) return;
+
+        siteFrame.style.left = box.left + 'px';
+        siteFrame.style.top = box.top + 'px';
+        siteFrame.style.width = box.width + 'px';
+        siteFrame.style.height = box.height + 'px';
+    }
+
     function createOverlay() {
         if (panel || !document.body) return;
 
@@ -1799,6 +1859,9 @@
         title.appendChild(titleText);
         title.appendChild(ldh);
 
+        const wrap = document.createElement('div');
+        wrap.className = 'chartcheck-help-wrap';
+
         const list = document.createElement('div');
         list.className = 'chartcheck-help-list';
         list.setAttribute('aria-hidden', 'false');
@@ -1809,6 +1872,7 @@
 
             if (action.sitePair) {
                 row.dataset.sitePair = action.sitePair;
+                row.classList.add('chartcheck-site-template');
             }
 
             const name = document.createElement('div');
@@ -1833,17 +1897,18 @@
             list.appendChild(row);
         });
 
-        const siteFrame = document.createElement('div');
+        siteFrame = document.createElement('div');
         siteFrame.className = 'chartcheck-site-frame';
         siteFrame.setAttribute('aria-hidden', 'true');
-        list.appendChild(siteFrame);
+        wrap.appendChild(list);
+        wrap.appendChild(siteFrame);
 
         const status = document.createElement('div');
         status.className = 'chartcheck-status';
         buildStatusContent(status);
 
         root.appendChild(title);
-        root.appendChild(list);
+        root.appendChild(wrap);
         root.appendChild(status);
         root.addEventListener('mousedown', (event) => event.stopPropagation());
         root.addEventListener('click', (event) => event.stopPropagation());
@@ -1853,8 +1918,11 @@
         helpList = list;
         statusEl = status;
         document.body.appendChild(root);
+        window.addEventListener('resize', updateSiteFrame);
+        list.addEventListener('scroll', updateSiteFrame);
         updateOverlay();
         refreshPatientSiteGray();
+        requestAnimationFrame(updateSiteFrame);
     }
 
     function ensureOverlay() {
@@ -1879,6 +1947,7 @@
     function refreshPatientSiteGray() {
         applyPatientSiteGray(detectPatientSite());
         maybeAutoCopyPatientMrn();
+        updateSiteFrame();
     }
 
     // Opening always shows the full panel (hotkey list included).
@@ -1894,6 +1963,8 @@
         if (panel.style.left) {
             clampPanel();
         }
+
+        requestAnimationFrame(updateSiteFrame);
     }
 
     function hidePanel() {
