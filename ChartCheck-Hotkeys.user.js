@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.25
+// @version      3.26
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @downloadURL  https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
 // @updateURL    https://raw.githubusercontent.com/mobility22/ChartCheck-Hotkeys/refs/heads/main/ChartCheck-Hotkeys.user.js
 // ==/UserScript==
@@ -92,6 +94,12 @@
     function updateOverlay() {
         if (!statusEl) return;
 
+        const reviewState = statusEl.querySelector('.chartcheck-review-state');
+        const rosevilleEl = statusEl.querySelector('.chartcheck-roseville-count');
+        const ranchoEl = statusEl.querySelector('.chartcheck-rancho-count');
+
+        if (!reviewState || !rosevilleEl || !ranchoEl) return;
+
         let statusText = 'ON';
         let statusColor = '#00ff66';
 
@@ -106,24 +114,98 @@
             statusColor = '#66ccff';
         }
 
-        statusEl.innerHTML =
-            'Auto Review: ' +
-            '<span style="color:' + statusColor + '">' +
-            statusText +
-            '</span><br>Roseville Count: ' + rosevilleReviewCount +
-            '<br>Rancho Count: ' + ranchoReviewCount;
+        reviewState.textContent = statusText;
+        reviewState.style.color = statusColor;
+        rosevilleEl.textContent = String(rosevilleReviewCount);
+        ranchoEl.textContent = String(ranchoReviewCount);
     }
 
-    function resetReviewCounts() {
-        autoReviewCount = 0;
+    function buildStatusContent(status) {
+        status.appendChild(document.createTextNode('Auto Review: '));
+
+        const reviewState = document.createElement('span');
+        reviewState.className = 'chartcheck-review-state';
+        status.appendChild(reviewState);
+        status.appendChild(document.createElement('br'));
+
+        status.appendChild(document.createTextNode('Roseville Count: '));
+
+        const rosevilleEl = document.createElement('span');
+        rosevilleEl.className = 'chartcheck-roseville-count';
+        status.appendChild(rosevilleEl);
+        status.appendChild(document.createElement('br'));
+
+        const ranchoLine = document.createElement('span');
+        ranchoLine.className = 'chartcheck-rancho-line';
+        ranchoLine.appendChild(document.createTextNode('Rancho Count: '));
+
+        const ranchoEl = document.createElement('span');
+        ranchoEl.className = 'chartcheck-rancho-count';
+        ranchoLine.appendChild(ranchoEl);
+
+        const resetBtn = document.createElement('button');
+        resetBtn.type = 'button';
+        resetBtn.className = 'chartcheck-count-reset';
+        resetBtn.textContent = '↺';
+        resetBtn.title = 'Reset Roseville and Rancho counts';
+        resetBtn.setAttribute('aria-label', 'Reset counts');
+
+        resetBtn.addEventListener('mousedown', (event) => {
+            event.stopPropagation();
+        });
+
+        resetBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            resetPersistedSiteCounts();
+        });
+
+        ranchoLine.appendChild(resetBtn);
+        status.appendChild(ranchoLine);
+    }
+
+    const SITE_COUNT_KEYS = {
+        roseville: 'chartcheck.rosevilleReviewCount',
+        rancho: 'chartcheck.ranchoReviewCount'
+    };
+
+    function readStoredCount(key) {
+        if (typeof GM_getValue !== 'function') return 0;
+
+        const value = Number(GM_getValue(key, 0));
+
+        if (!Number.isFinite(value) || value <= 0) return 0;
+
+        return Math.floor(value);
+    }
+
+    function loadSiteCounts() {
+        rosevilleReviewCount = readStoredCount(SITE_COUNT_KEYS.roseville);
+        ranchoReviewCount = readStoredCount(SITE_COUNT_KEYS.rancho);
+    }
+
+    function persistSiteCounts() {
+        if (typeof GM_setValue !== 'function') return;
+
+        GM_setValue(SITE_COUNT_KEYS.roseville, rosevilleReviewCount);
+        GM_setValue(SITE_COUNT_KEYS.rancho, ranchoReviewCount);
+    }
+
+    // Only the panel reset control clears the site counts. Starting a
+    // review, reloading, or a new day must not.
+    function resetPersistedSiteCounts() {
         rosevilleReviewCount = 0;
         ranchoReviewCount = 0;
+        persistSiteCounts();
+        updateOverlay();
+        console.log('counters reset');
     }
 
-    // autoReviewCount stays the total, including charts whose center
-    // line is neither Roseville nor Rancho. Those unknown charts are
-    // not added to either site count. The total is what the every-fifth
-    // queue check and the stop logs already use.
+    // autoReviewCount stays the per-run total, including charts whose
+    // center line is neither Roseville nor Rancho. Those unknown charts
+    // are not added to either site count. The run total is what the
+    // every-fifth queue check and the stop logs already use. Site
+    // counts accumulate until the panel reset control is clicked.
     function recordReviewedChart(site) {
         autoReviewCount++;
 
@@ -132,6 +214,8 @@
         } else if (site === 'rancho') {
             ranchoReviewCount++;
         }
+
+        persistSiteCounts();
     }
 
     // ============================================================
@@ -1033,7 +1117,7 @@
         // again. FAILs on later charts still stop the run.
         let skipFailOnThisChart = options.skipInitialFail === true;
 
-        resetReviewCounts();
+        autoReviewCount = 0;
         autoReviewMode = continueOnFail ? 'Nonstop' : 'Review';
         autoReviewActive = true;
         updateOverlay();
@@ -1120,7 +1204,7 @@
             return;
         }
 
-        resetReviewCounts();
+        autoReviewCount = 0;
         autoReviewMode = 'Approve';
         autoReviewActive = true;
         updateOverlay();
@@ -1508,6 +1592,35 @@
                 pointer-events: none;
             }
 
+            #chartcheck-panel .chartcheck-rancho-line {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+            }
+
+            #chartcheck-panel .chartcheck-count-reset {
+                flex: 0 0 auto;
+                margin: 0;
+                padding: 0 7px;
+                font-family: monospace;
+                font-size: 16px;
+                font-weight: bold;
+                line-height: 1.3;
+                color: #04140c;
+                background: #00ff66;
+                border: 1px solid #00ff66;
+                border-radius: 3px;
+                cursor: pointer;
+                pointer-events: auto;
+            }
+
+            #chartcheck-panel .chartcheck-count-reset:hover,
+            #chartcheck-panel .chartcheck-count-reset:focus {
+                background: #04140c;
+                color: #00ff66;
+            }
+
             #chartcheck-panel .chartcheck-help-row {
                 display: flex;
                 align-items: center;
@@ -1568,6 +1681,17 @@
             #chartcheck-panel .chartcheck-help-row.chartcheck-site-muted .chartcheck-help-btn:focus {
                 color: #9a9a9a;
                 background: #2a2a2a;
+            }
+
+            /* Thin, subtle box around the ROS/RCO 2x2 (grid rows 4-5). */
+            #chartcheck-panel .chartcheck-site-frame {
+                grid-column: 1 / span 2;
+                grid-row: 4 / span 2;
+                box-sizing: border-box;
+                pointer-events: none;
+                border: 1px solid rgba(0, 255, 102, 0.28);
+                border-radius: 3px;
+                z-index: 1;
             }
         `;
 
@@ -1709,8 +1833,14 @@
             list.appendChild(row);
         });
 
+        const siteFrame = document.createElement('div');
+        siteFrame.className = 'chartcheck-site-frame';
+        siteFrame.setAttribute('aria-hidden', 'true');
+        list.appendChild(siteFrame);
+
         const status = document.createElement('div');
         status.className = 'chartcheck-status';
+        buildStatusContent(status);
 
         root.appendChild(title);
         root.appendChild(list);
@@ -1881,6 +2011,8 @@
     // ============================================================
     // Init
     // ============================================================
+
+    loadSiteCounts();
 
     window.addEventListener('load', () => {
         createOverlay();
