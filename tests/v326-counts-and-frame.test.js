@@ -20,8 +20,8 @@ function extract(label, start, end) {
     return src.slice(a, b);
 }
 
-ok('@version 3.29', /@version\s+3\.29\b/.test(src));
-ok('no leftover 3.28', !/\b3\.28\b/.test(src));
+ok('@version 3.30', /@version\s+3\.30\b/.test(src));
+ok('no leftover 3.29', !/\b3\.29\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('loaded log uses SCRIPT_VERSION', src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION} Loaded') || src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION}'));
 ok('grants GM_getValue', /@grant\s+GM_getValue/.test(src));
@@ -65,28 +65,35 @@ const buttonOrder = extract('buttonOrder', '        const buttonOrder = [', '   
 ok('ROS/RCO four items are buttons 7-10', /'Q',\s*'W',\s*'⇧Q',\s*'⇧W'/.test(buttonOrder));
 ok('site frame class is created', src.includes("siteFrame.className = 'chartcheck-site-frame'"));
 ok('site rows get chartcheck-site-template', src.includes("row.classList.add('chartcheck-site-template')"));
-ok('site frame is an absolute overlay with only top and bottom 2px yellow lines', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?border-top:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);[\s\S]*?border-bottom:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);/.test(src));
-ok('site frame has no left or right border and no radius', !/#chartcheck-panel \.chartcheck-site-frame\s*\{[^}]*(border:\s*2px solid|border-left:\s*[^0]|border-right:\s*[^0]|border-radius:\s*[^0])/.test(src));
+ok('site frame is an absolute 2px yellow box on all four sides', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?border:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);[\s\S]*?border-radius:\s*3px;/.test(src));
+ok('site frame uses the four-sided border shorthand, not top/bottom only', !/#chartcheck-panel \.chartcheck-site-frame\s*\{[^}]*(border-top:|border-bottom:|border:\s*none)/.test(src));
 ok('site frame is not grid-positioned', !/#chartcheck-panel \.chartcheck-site-frame\s*\{[^}]*grid-row:/.test(src));
 ok('site frame ignores pointer events', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?pointer-events:\s*none;/.test(src));
+ok('site frame z-index is above the cells', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?z-index:\s*10;/.test(src));
 ok('site frame recomputes on resize, scroll, and render', src.includes("window.addEventListener('resize', updateSiteFrame)") && src.includes("list.addEventListener('scroll', updateSiteFrame)") && src.includes('requestAnimationFrame(updateSiteFrame)') && /function refreshPatientSiteGray\([\s\S]*?updateSiteFrame\(\);/.test(src));
+ok('updateSiteFrame measures the panel content box', src.includes('panel.clientLeft') && src.includes('panel.clientWidth') && src.includes('panelContentRect'));
 
 const boxStart = src.indexOf('    function siteFrameBox(');
 const boxEnd = src.indexOf('    function updateSiteFrame(');
 ok('siteFrameBox extract', boxStart >= 0 && boxEnd > boxStart);
 const siteFrameBox = new Function(src.slice(boxStart, boxEnd) + '\nreturn siteFrameBox;')();
-const twoByTwo = siteFrameBox(
-    { left: 100, top: 200, right: 300, bottom: 400 },
-    [
-        { left: 100, top: 260, right: 200, bottom: 280 },
-        { left: 200, top: 260, right: 300, bottom: 280 },
-        { left: 100, top: 280, right: 200, bottom: 300 },
-        { left: 200, top: 280, right: 300, bottom: 300 }
-    ]
-);
-ok('frame box spans both columns', !!(twoByTwo && twoByTwo.width === 200 && twoByTwo.left === 0));
+const wrapRect = { left: 100, top: 200, right: 300, bottom: 400 };
+const panelContent = { left: 100, right: 300 };
+const cells = [
+    { left: 100, top: 260, right: 200, bottom: 280 },
+    { left: 200, top: 260, right: 300, bottom: 280 },
+    { left: 100, top: 280, right: 200, bottom: 300 },
+    { left: 200, top: 280, right: 300, bottom: 300 }
+];
+const twoByTwo = siteFrameBox(wrapRect, cells, panelContent, 4);
+const frameLeft = wrapRect.left + twoByTwo.left;
+const frameRight = frameLeft + twoByTwo.width;
+ok('frame box spans both columns', !!(twoByTwo && twoByTwo.width === 192));
 ok('frame box spans both rows', !!(twoByTwo && twoByTwo.height === 40 && twoByTwo.top === 60));
 ok('frame box is not a zero-height line', !!(twoByTwo && twoByTwo.height > 2 && twoByTwo.width > 2));
+ok('frame left edge is inside the panel content box', !!(twoByTwo && frameLeft >= panelContent.left + 4));
+ok('frame right edge is inside the panel content box', !!(twoByTwo && frameRight <= panelContent.right - 4));
+ok('frame is inset 4px from panel left and right', !!(twoByTwo && frameLeft === panelContent.left + 4 && frameRight === panelContent.right - 4));
 ok('empty cells yield no box', siteFrameBox({ left: 0, top: 0 }, []) === null);
 
 // Persist, accumulate, and reset with a mocked GM store.
