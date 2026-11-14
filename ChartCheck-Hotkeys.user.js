@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.30
+// @version      3.31
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -2097,10 +2097,100 @@
     }
 
     // ============================================================
+    // Auto-reload
+    // Every 5 minutes the page reloads. If the user is editing, recently
+    // clicked or typed, auto review is running, or an unsaved-changes
+    // handler is present, wait 1 minute and try again.
+    // ============================================================
+
+    const AUTO_RELOAD_MS = 5 * 60 * 1000;
+    const AUTO_RELOAD_RETRY_MS = 60 * 1000;
+    const AUTO_RELOAD_ACTIVITY_MS = 60 * 1000;
+
+    let lastUserActivityAt = 0;
+    let autoReloadTimer = null;
+
+    function recordUserActivity() {
+        lastUserActivityAt = Date.now();
+    }
+
+    function deepActiveElement() {
+        let el = document.activeElement;
+
+        while (el && el.shadowRoot && el.shadowRoot.activeElement) {
+            el = el.shadowRoot.activeElement;
+        }
+
+        return el;
+    }
+
+    function isEditingFocus() {
+        return isEditableTarget(deepActiveElement());
+    }
+
+    function hadActivityWithin(lastActivityAt, now, windowMs) {
+        return lastActivityAt > 0 && (now - lastActivityAt) < windowMs;
+    }
+
+    function hasUnsavedChangesIndicator() {
+        return typeof window.onbeforeunload === 'function';
+    }
+
+    function shouldPostponeAutoReload(state) {
+        const current = state || {
+            autoReviewActive: autoReviewActive,
+            isEditing: isEditingFocus(),
+            lastActivityAt: lastUserActivityAt,
+            now: Date.now(),
+            activityWindowMs: AUTO_RELOAD_ACTIVITY_MS,
+            hasUnsavedChanges: hasUnsavedChangesIndicator()
+        };
+
+        if (current.autoReviewActive) return true;
+        if (current.isEditing) return true;
+        if (hadActivityWithin(
+            current.lastActivityAt,
+            current.now,
+            current.activityWindowMs
+        )) return true;
+        if (current.hasUnsavedChanges) return true;
+
+        return false;
+    }
+
+    function scheduleAutoReload(delay) {
+        if (autoReloadTimer !== null) {
+            clearTimeout(autoReloadTimer);
+        }
+
+        autoReloadTimer = setTimeout(tryAutoReload, delay);
+    }
+
+    function tryAutoReload() {
+        autoReloadTimer = null;
+
+        if (shouldPostponeAutoReload()) {
+            scheduleAutoReload(AUTO_RELOAD_RETRY_MS);
+            return;
+        }
+
+        location.reload();
+    }
+
+    function startAutoReload() {
+        document.addEventListener('keydown', recordUserActivity, true);
+        document.addEventListener('keyup', recordUserActivity, true);
+        document.addEventListener('mousedown', recordUserActivity, true);
+        document.addEventListener('click', recordUserActivity, true);
+        scheduleAutoReload(AUTO_RELOAD_MS);
+    }
+
+    // ============================================================
     // Init
     // ============================================================
 
     loadSiteCounts();
+    startAutoReload();
 
     window.addEventListener('load', () => {
         createOverlay();
