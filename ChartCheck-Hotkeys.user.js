@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.38
+// @version      3.39
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -2163,7 +2163,7 @@
             #chartcheck-panel .chartcheck-status {
                 flex: 0 0 auto;
                 padding: 14px 18px;
-                font-size: 23px;
+                font-size: 21px;
                 line-height: 1.3;
                 white-space: nowrap;
                 border-top: 1px solid rgba(0, 255, 102, 0.45);
@@ -2182,7 +2182,7 @@
                 margin: 0;
                 padding: 0 7px;
                 font-family: monospace;
-                font-size: 16px;
+                font-size: 15px;
                 font-weight: bold;
                 line-height: 1.3;
                 color: #04140c;
@@ -2223,9 +2223,9 @@
                 flex: 0 0 auto;
                 min-width: 3.4em;
                 margin: 0;
-                padding: 1px 5px;
+                padding: 2px 6px;
                 font-family: monospace;
-                font-size: 13px;
+                font-size: 15px;
                 font-weight: bold;
                 line-height: 1.35;
                 text-align: center;
