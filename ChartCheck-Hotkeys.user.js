@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.34
+// @version      3.35
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -24,6 +24,11 @@
         dialogPollMs: 250,
         dialogTimeoutMs: 8000
     };
+
+    // Auto-approve keeps this fixed delay. Review uses the Delay switch.
+    const AUTO_APPROVE_DELAY_MS = 3000;
+    const REVIEW_DELAY_ON_MS = 3000;
+    const REVIEW_DELAY_OFF_MS = 0;
 
     // ============================================================
     // State
@@ -70,10 +75,9 @@
     // ============================================================
     // Floating window
     // One panel: version title, hotkey list, then status.
-    // The list is always part of the window. There is no collapsed
-    // title/status strip. Alt+L, the Hide button, or LDH hides that
-    // full panel and shows it again the same way. While it is hidden,
-    // nothing from this script is visible.
+    // Hide and LDH minimize the panel to its title bar in the
+    // bottom-right corner. Clicking that bar restores the panel
+    // at its previous position.
     // ============================================================
 
     let panel;
@@ -222,6 +226,101 @@
     // ============================================================
     // Generic Finders
     // ============================================================
+
+    const REVIEW_SETTING_KEYS = {
+        nonstop: 'chartcheck.nonstopReview',
+        delayMs: 'chartcheck.reviewDelayMs'
+    };
+
+    let nonstopReview = false;
+    let reviewDelayMs = REVIEW_DELAY_ON_MS;
+
+    function currentNonstop() {
+        return nonstopReview === true;
+    }
+
+    function currentReviewDelayMs() {
+        return reviewDelayMs === REVIEW_DELAY_OFF_MS
+            ? REVIEW_DELAY_OFF_MS
+            : REVIEW_DELAY_ON_MS;
+    }
+
+    function readStoredNonstop(key) {
+        if (typeof GM_getValue !== 'function') return false;
+
+        const value = GM_getValue(key, false);
+
+        if (value === true || value === 'true' || value === 1 || value === '1') {
+            return true;
+        }
+
+        return false;
+    }
+
+    function readStoredReviewDelay(key) {
+        if (typeof GM_getValue !== 'function') return REVIEW_DELAY_ON_MS;
+
+        const value = Number(GM_getValue(key, REVIEW_DELAY_ON_MS));
+
+        if (value === REVIEW_DELAY_OFF_MS || value === REVIEW_DELAY_ON_MS) {
+            return value;
+        }
+
+        return REVIEW_DELAY_ON_MS;
+    }
+
+    function loadReviewSettings() {
+        nonstopReview = readStoredNonstop(REVIEW_SETTING_KEYS.nonstop);
+        reviewDelayMs = readStoredReviewDelay(REVIEW_SETTING_KEYS.delayMs);
+    }
+
+    function persistReviewSettings() {
+        if (typeof GM_setValue !== 'function') return;
+
+        GM_setValue(REVIEW_SETTING_KEYS.nonstop, currentNonstop());
+        GM_setValue(REVIEW_SETTING_KEYS.delayMs, currentReviewDelayMs());
+    }
+
+    function nonstopSwitchLabel() {
+        return currentNonstop() ? 'ON' : 'OFF';
+    }
+
+    function delaySwitchLabel() {
+        return currentReviewDelayMs() === REVIEW_DELAY_OFF_MS ? 'Off' : '3s';
+    }
+
+    function refreshReviewSwitchLabels() {
+        if (!helpList) return;
+
+        helpList.querySelectorAll('[data-review-switch]').forEach(row => {
+            const button = row.querySelector('.chartcheck-help-btn');
+            const id = row.dataset.reviewSwitch;
+
+            if (!button) return;
+
+            if (id === 'nonstop') button.textContent = nonstopSwitchLabel();
+            if (id === 'delay') button.textContent = delaySwitchLabel();
+        });
+    }
+
+    function toggleNonstop() {
+        nonstopReview = !currentNonstop();
+        persistReviewSettings();
+        refreshReviewSwitchLabels();
+
+        if (autoReviewActive) {
+            autoReviewMode = currentNonstop() ? 'Nonstop' : 'Review';
+            updateOverlay();
+        }
+    }
+
+    function toggleReviewDelay() {
+        reviewDelayMs = currentReviewDelayMs() === REVIEW_DELAY_ON_MS
+            ? REVIEW_DELAY_OFF_MS
+            : REVIEW_DELAY_ON_MS;
+        persistReviewSettings();
+        refreshReviewSwitchLabels();
+    }
 
     function findButtons(root = document) {
         const results = [];
@@ -1565,14 +1664,20 @@
             return;
         }
 
-        const continueOnFail = options.continueOnFail === true;
-        // Alt+C resumes: a FAIL already on the starting chart was the one
-        // the previous run stopped on, so move past it instead of stopping
-        // again. FAILs on later charts still stop the run.
-        let skipFailOnThisChart = options.skipInitialFail === true;
+        // A FAIL on the starting chart is skipped when Nonstop is off,
+        // so Review can be pressed again on the chart the last run stopped
+        // on. Later FAILs still stop when Nonstop is off. The Nonstop and
+        // Delay switches are read each iteration so a mid-run flip applies
+        // from the next chart.
+        let skipFailOnThisChart = Object.prototype.hasOwnProperty.call(
+            options,
+            'skipInitialFail'
+        )
+            ? options.skipInitialFail === true
+            : !currentNonstop();
 
         autoReviewCount = 0;
-        autoReviewMode = continueOnFail ? 'Nonstop' : 'Review';
+        autoReviewMode = currentNonstop() ? 'Nonstop' : 'Review';
         autoReviewActive = true;
         updateOverlay();
 
@@ -1584,17 +1689,23 @@
             }
 
             while (autoReviewActive) {
-                if (delay > 0) {
-                    await sleep(delay);
+                const delayNow = currentReviewDelayMs();
+
+                if (delayNow > 0) {
+                    await sleep(delayNow);
                     if (!autoReviewActive) break;
                 }
+
+                const continueOnFail = currentNonstop();
+                autoReviewMode = continueOnFail ? 'Nonstop' : 'Review';
+                updateOverlay();
 
                 const fail = findFailLinks()[0];
                 const skipThisFail = skipFailOnThisChart;
                 skipFailOnThisChart = false;
 
                 if (fail && skipThisFail && !continueOnFail) {
-                    console.log('Quick Review resuming past the FAIL on the starting chart');
+                    console.log('Review resuming past the FAIL on the starting chart');
                 } else if (fail) {
                     if (!autoReviewActive) break;
 
@@ -1769,20 +1880,11 @@
         setTemplate('RCO_SBRT');
     }
 
-    function startAutoReview() {
-        runLocked(() => reviewUntilFail(0, { skipInitialFail: true }));
-    }
-
-    function startSlowAutoReview() {
+    function startReview() {
         runLocked(() =>
-            reviewUntilFail(CONFIG.slowReviewDelay)
-        );
-    }
-
-    function startSlowNonstopReview() {
-        runLocked(() =>
-            reviewUntilFail(CONFIG.slowReviewDelay, {
-                continueOnFail: true
+            reviewUntilFail(currentReviewDelayMs(), {
+                continueOnFail: currentNonstop(),
+                skipInitialFail: !currentNonstop()
             })
         );
     }
@@ -1801,7 +1903,7 @@
         }
 
         runLocked(() =>
-            reviewApproveUntilFail(CONFIG.slowReviewDelay)
+            reviewApproveUntilFail(AUTO_APPROVE_DELAY_MS)
         );
     }
 
@@ -1818,14 +1920,12 @@
     // S load the next patient, A approve once,
     // D open the first FAIL link, F click the first failed unchecked box,
     // Q ROS_Standard, W ROS_SBRT/SRS, Shift+Q RCO_Standard, Shift+W RCO_SBRT,
-    // C fast review until FAIL (clicks the FAIL link and stops),
-    // R slow review until FAIL (same stop, CONFIG.slowReviewDelay pause),
-    // E nonstop slow review: keep loading the next patient past FAIL
-    //   and do not click the FAIL link,
+    // R starts Review. Nonstop ON continues past FAIL; OFF stops and
+    //   clicks the FAIL link, skipping a FAIL already on the starting
+    //   chart. Delay chooses 0 ms or 3000 ms for that wait only.
     // Ctrl+Shift+R auto-approve until FAIL, X stop,
-    // L hides or restores this same window. The grid button beside
-    // Stop does that too. LDH on the title does the same.
-    // Alt+Z still goes back; Back is not shown in this panel.
+    // L and LDH minimize the panel to the title bar; clicking the bar
+    // restores it. Alt+Z still goes back; Back is not shown in this panel.
     const HELP_ACTIONS = [
         {
             name: 'Next',
@@ -1882,22 +1982,26 @@
             run: applyRcoSbrt
         },
         {
-            name: 'Quick Review',
-            button: 'C',
-            shortcut: 'Alt+C',
-            run: startAutoReview
-        },
-        {
-            name: 'Slow review',
+            name: 'Review',
             button: 'R',
             shortcut: 'Alt+R',
-            run: startSlowAutoReview
+            run: startReview
         },
         {
-            name: 'NS Review',
-            button: 'E',
-            shortcut: 'Alt+E',
-            run: startSlowNonstopReview
+            name: 'Nonstop',
+            button: 'NONSTOP',
+            kind: 'switch',
+            switchId: 'nonstop',
+            hint: 'Continue past FAIL when ON',
+            run: toggleNonstop
+        },
+        {
+            name: 'Delay',
+            button: 'DELAY',
+            kind: 'switch',
+            switchId: 'delay',
+            hint: 'Wait 3s or Off between charts',
+            run: toggleReviewDelay
         },
         {
             name: 'Auto-approve',
@@ -1914,15 +2018,15 @@
         {
             name: 'Hide',
             button: 'L',
-            shortcut: 'Alt+L',
+            hint: 'Minimize to the title bar',
             run: togglePanelVisibility
         }
     ];
 
     // Fixed 2-column reading order. Hide fills the slot Back used to occupy.
     // Next | Approve
-    // Auto-approve | Nonstop review
-    // Slow review | Review
+    // Auto-approve | Nonstop
+    // Review | Delay
     // ROS Standard | ROS SBRT
     // RCO Standard | RCO SBRT
     // Fail link | Fail box
@@ -1932,9 +2036,9 @@
             'S',
             'A',
             '⌃⇧R',
-            'E',
+            'NONSTOP',
             'R',
-            'C',
+            'DELAY',
             'Q',
             'W',
             '⇧Q',
@@ -1982,8 +2086,21 @@
                 pointer-events: none;
             }
 
-            #chartcheck-panel.chartcheck-hidden {
+            #chartcheck-panel.chartcheck-minimized {
+                right: 10px;
+                bottom: 10px;
+                left: auto;
+                top: auto;
+            }
+
+            #chartcheck-panel.chartcheck-minimized .chartcheck-help-wrap,
+            #chartcheck-panel.chartcheck-minimized .chartcheck-status,
+            #chartcheck-panel.chartcheck-minimized .chartcheck-ldh {
                 display: none !important;
+            }
+
+            #chartcheck-panel.chartcheck-minimized .chartcheck-title {
+                cursor: pointer;
             }
 
             #chartcheck-panel .chartcheck-title {
@@ -2206,6 +2323,7 @@
 
         handle.addEventListener('mousedown', (e) => {
             if (e.button !== 0) return;
+            if (panelHidden) return;
 
             const rect = root.getBoundingClientRect();
 
@@ -2315,7 +2433,7 @@
         ldh.type = 'button';
         ldh.className = 'chartcheck-ldh';
         ldh.textContent = 'LDH';
-        ldh.title = 'Hide this panel. Alt+L shows the full panel again.';
+        ldh.title = 'Minimize to the title bar';
         ldh.setAttribute('aria-label', 'LDH');
 
         ldh.addEventListener('mousedown', (event) => {
@@ -2358,8 +2476,17 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'chartcheck-help-btn';
-            button.textContent = action.button;
-            button.title = action.shortcut;
+            if (action.kind === 'switch') {
+                row.dataset.reviewSwitch = action.switchId;
+                button.textContent = action.switchId === 'nonstop'
+                    ? nonstopSwitchLabel()
+                    : delaySwitchLabel();
+                button.title = action.hint || action.name;
+            } else {
+                button.textContent = action.button;
+                button.title = action.hint || action.shortcut || action.name;
+            }
+
             button.setAttribute('aria-label', action.name);
 
             button.addEventListener('click', (event) => {
@@ -2398,13 +2525,25 @@
         root.addEventListener('click', (event) => event.stopPropagation());
         makePanelDraggable(root, title);
 
+        title.addEventListener('click', (event) => {
+            if (!panelHidden) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            showPanel();
+        });
+
         panel = root;
         helpList = list;
         statusEl = status;
         document.body.appendChild(root);
+        window.addEventListener('resize', () => {
+            if (panelHidden) dockMinimizedPanel();
+        });
         window.addEventListener('resize', updateSiteFrame);
         list.addEventListener('scroll', updateSiteFrame);
         updateOverlay();
+        refreshReviewSwitchLabels();
         refreshPatientSiteGray();
         requestAnimationFrame(updateSiteFrame);
     }
@@ -2446,33 +2585,83 @@
         }
     }
 
-    // Opening always shows the full panel (hotkey list included).
-    // There is no collapsed title-and-status strip.
+    let savedPanelPosition = null;
+
+    function dockMinimizedPanel() {
+        if (!panel) return;
+
+        panel.style.left = 'auto';
+        panel.style.top = 'auto';
+        panel.style.right = '10px';
+        panel.style.bottom = '10px';
+
+        requestAnimationFrame(() => {
+            if (!panel || !panelHidden) return;
+
+            const rect = panel.getBoundingClientRect();
+
+            if (rect.left < 10) {
+                panel.style.right = 'auto';
+                panel.style.left = '10px';
+            }
+
+            if (rect.top < 10) {
+                panel.style.bottom = 'auto';
+                panel.style.top = '10px';
+            }
+        });
+    }
+
+    function savePanelPositionForRestore() {
+        if (!panel) return;
+
+        if (panel.style.left) {
+            savedPanelPosition = {
+                left: panel.style.left,
+                top: panel.style.top
+            };
+        } else {
+            savedPanelPosition = null;
+        }
+    }
+
+    // Opening restores the full panel at its previous position.
     function showPanel() {
         if (!panel) return;
 
         panelHidden = false;
-        panel.classList.remove('chartcheck-hidden');
+        panel.classList.remove('chartcheck-minimized');
         panel.setAttribute('aria-hidden', 'false');
-        refreshPatientSiteGray();
 
-        if (panel.style.left) {
+        if (savedPanelPosition) {
+            panel.style.left = savedPanelPosition.left;
+            panel.style.top = savedPanelPosition.top;
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
             clampPanel();
+        } else {
+            panel.style.left = '';
+            panel.style.top = '';
+            panel.style.right = '10px';
+            panel.style.bottom = '10px';
         }
 
+        refreshPatientSiteGray();
         requestAnimationFrame(updateSiteFrame);
     }
 
     function hidePanel() {
         if (!panel) return;
 
+        savePanelPositionForRestore();
         panelHidden = true;
-        panel.classList.add('chartcheck-hidden');
-        panel.setAttribute('aria-hidden', 'true');
+        panel.classList.add('chartcheck-minimized');
+        panel.setAttribute('aria-hidden', 'false');
+        dockMinimizedPanel();
     }
 
-    // LDH, Alt+L, and the Hide button hide and show the one panel.
-    // Hidden leaves no visible ChartCheck widget on the page.
+    // LDH and the Hide button minimize the panel to its title bar.
+    // Clicking that bar restores the full panel.
     function togglePanelVisibility() {
         ensureOverlay();
 
@@ -2547,31 +2736,17 @@
             if (!isTemplateHotkeyMuted('rco', true)) applyRcoSbrt();
         }
 
-        if (e.altKey && key === 'c') {
-            startAutoReview();
-        }
-
         if (e.ctrlKey && e.shiftKey && key === 'r') {
             e.preventDefault();
             startAutoApprove();
         }
 
         if (e.altKey && key === 'r') {
-            startSlowAutoReview();
-        }
-
-        if (e.altKey && key === 'e') {
-            e.preventDefault();
-            startSlowNonstopReview();
+            startReview();
         }
 
         if (e.altKey && key === 'x') {
             stopAuto();
-        }
-
-        if (e.altKey && !e.shiftKey && !e.ctrlKey && key === 'l') {
-            e.preventDefault();
-            togglePanelVisibility();
         }
     }
 
@@ -2711,6 +2886,7 @@
         });
     }
 
+    loadReviewSettings();
     loadSiteCounts();
     startAutoReload();
 
