@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.36
+// @version      3.37
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -289,17 +289,32 @@
         return currentReviewDelayMs() === REVIEW_DELAY_OFF_MS ? 'Off' : '3s';
     }
 
+    function isReviewSwitchOn(id) {
+        if (id === 'nonstop') return currentNonstop();
+        if (id === 'delay') return currentReviewDelayMs() !== REVIEW_DELAY_OFF_MS;
+
+        return false;
+    }
+
     function refreshReviewSwitchLabels() {
         if (!helpList) return;
 
         helpList.querySelectorAll('[data-review-switch]').forEach(row => {
             const button = row.querySelector('.chartcheck-help-btn');
+            const label = row.querySelector('.chartcheck-switch-label');
             const id = row.dataset.reviewSwitch;
 
             if (!button) return;
 
-            if (id === 'nonstop') button.textContent = nonstopSwitchLabel();
-            if (id === 'delay') button.textContent = delaySwitchLabel();
+            const on = isReviewSwitchOn(id);
+
+            row.classList.toggle('chartcheck-switch-on', on);
+            button.classList.toggle('chartcheck-switch-on', on);
+
+            if (label) {
+                if (id === 'nonstop') label.textContent = nonstopSwitchLabel();
+                if (id === 'delay') label.textContent = delaySwitchLabel();
+            }
         });
     }
 
@@ -2014,8 +2029,8 @@
 
     // Fixed 2-column reading order. Hide fills the slot Back used to occupy.
     // Next | Approve
-    // Auto-approve | Nonstop
-    // Review | Delay
+    // Auto-approve | Review
+    // Nonstop | Delay
     // ROS Standard | ROS SBRT
     // RCO Standard | RCO SBRT
     // Fail link | Fail box
@@ -2025,8 +2040,8 @@
             'S',
             'A',
             '⌃⇧R',
-            'NONSTOP',
             'R',
+            'NONSTOP',
             'DELAY',
             'Q',
             'W',
@@ -2234,6 +2249,39 @@
             #chartcheck-panel .chartcheck-help-btn:focus {
                 background: #00ff66;
                 color: #04140c;
+            }
+
+            #chartcheck-panel .chartcheck-help-btn.chartcheck-review-switch-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 4px;
+                background: transparent;
+                border: 1px solid rgba(0, 255, 102, 0.35);
+                border-radius: 999px;
+            }
+
+            #chartcheck-panel .chartcheck-help-btn.chartcheck-review-switch-btn:hover,
+            #chartcheck-panel .chartcheck-help-btn.chartcheck-review-switch-btn:focus {
+                background: #00ff66;
+                color: #04140c;
+            }
+
+            #chartcheck-panel .chartcheck-switch-dot {
+                flex: 0 0 auto;
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: #7a7a7a;
+            }
+
+            #chartcheck-panel .chartcheck-help-btn.chartcheck-switch-on .chartcheck-switch-dot {
+                background: #00ff66;
+            }
+
+            #chartcheck-panel .chartcheck-help-btn.chartcheck-review-switch-btn:hover .chartcheck-switch-dot,
+            #chartcheck-panel .chartcheck-help-btn.chartcheck-review-switch-btn:focus .chartcheck-switch-dot {
+                background: #04140c;
             }
 
             #chartcheck-panel .chartcheck-help-row.chartcheck-site-muted .chartcheck-help-name {
@@ -2466,11 +2514,31 @@
             button.type = 'button';
             button.className = 'chartcheck-help-btn';
             if (action.kind === 'switch') {
+                row.classList.add('chartcheck-review-switch');
                 row.dataset.reviewSwitch = action.switchId;
-                button.textContent = action.switchId === 'nonstop'
+                button.classList.add('chartcheck-review-switch-btn');
+
+                const dot = document.createElement('span');
+                dot.className = 'chartcheck-switch-dot';
+                dot.setAttribute('aria-hidden', 'true');
+
+                const label = document.createElement('span');
+                label.className = 'chartcheck-switch-label';
+                label.textContent = action.switchId === 'nonstop'
                     ? nonstopSwitchLabel()
                     : delaySwitchLabel();
+
+                button.appendChild(dot);
+                button.appendChild(label);
                 button.title = action.hint || action.name;
+                button.classList.toggle(
+                    'chartcheck-switch-on',
+                    isReviewSwitchOn(action.switchId)
+                );
+                row.classList.toggle(
+                    'chartcheck-switch-on',
+                    isReviewSwitchOn(action.switchId)
+                );
             } else {
                 button.textContent = action.button;
                 button.title = action.hint || action.name;

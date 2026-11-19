@@ -10,14 +10,14 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.36', /@version\s+3\.36\b/.test(src));
-ok('no leftover 3.35', !/\b3\.35\b/.test(src));
+ok('@version 3.37', /@version\s+3\.37\b/.test(src));
+ok('no leftover 3.36', !/\b3\.36\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('Quick Review / NS Review / Slow review actions are gone', !src.includes("name: 'Quick Review'") && !src.includes("name: 'NS Review'") && !src.includes("name: 'Slow review'"));
 ok('single Review action on the R button', /name: 'Review'[\s\S]*?button: 'R'[\s\S]*?run: startReview/.test(src) && !/shortcut:/.test(src));
 ok('startAutoReview, startSlowAutoReview, and startSlowNonstopReview are gone', !src.includes('function startAutoReview') && !src.includes('function startSlowAutoReview') && !src.includes('function startSlowNonstopReview'));
-ok('Nonstop and Delay switches take E and C grid spots', /const buttonOrder = \[[\s\S]*?'⌃⇧R',\s*'NONSTOP',\s*'R',\s*'DELAY',/.test(src));
+ok('Review sits right of Auto-approve, then Nonstop and Delay', /const buttonOrder = \[[\s\S]*?'⌃⇧R',\s*'R',\s*'NONSTOP',\s*'DELAY',/.test(src));
 ok('keyboard hotkeys are gone', !/handleHotkeys/.test(src) && !/altKey/.test(src) && !/Alt\+/.test(src));
 
 ok('Nonstop defaults off and Delay defaults to 3s', src.includes('let nonstopReview = false;') && src.includes('let reviewDelayMs = REVIEW_DELAY_ON_MS;') && src.includes('const REVIEW_DELAY_ON_MS = 3000;') && src.includes('const REVIEW_DELAY_OFF_MS = 0;'));
