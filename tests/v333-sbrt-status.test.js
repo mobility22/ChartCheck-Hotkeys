@@ -64,11 +64,30 @@ ok('later field label is not treated as the total', fromCells([
 ok('unread cells return null', fromCells(['Frequency', 'Daily']) === null);
 ok('empty cells return null', fromCells([]) === null);
 
-ok('status shows ROS, fx 30, SBRT off', format('roseville', 30, true) === 'site ROS · fx 30 · SBRT off');
-ok('status shows RCO, fx 5, SBRT on', format('rancho', 5, false) === 'site RCO · fx 5 · SBRT on');
-ok('unread total is fx ?', format('roseville', null, false) === 'site ROS · fx ? · SBRT on');
-ok('unknown site is site ?', format('unknown', 30, false) === 'site ? · fx 30 · SBRT on');
+ok('confirmed row: Rx 3 and Plan 2 / 3 uses M', fromCells(['Delivered / Total Fractions', '3', '2 / 3']) === 3);
+ok('confirmed row with M in its own span', fromCells(['Delivered / Total Fractions', '3', '2 /', '3']) === 3);
+ok('confirmed row with a 30-fraction plan', fromCells(['Delivered / Total Fractions', '30', '2 /', '30']) === 30);
+ok('nbsp in a split plan cell 2 / 3', fromCells(['Delivered / Total Fractions', '3', '2\u00A0/', '3']) === 3);
+ok('Rx lone total is used when Plan has no pair', fromCells(['Delivered / Total Fractions', '3']) === 3);
+ok('Dose Per Fraction 1600cGy/fx is not used as M', fromCells([
+    'Dose Per Fraction', '1600cGy/fx', '1600cGy/fx',
+    'Delivered / Total Fractions', '3', '2 /', '3',
+    'Total Dose', '400 of 6000 cGy'
+]) === 3);
+ok('1600cGy/fx alone is not a fraction total', parse('1600cGy/fx') === null);
+ok('400 of 6000 cGy is not a fraction total', parse('400 of 6000 cGy') === null);
+ok('400 / 6000 centigray is not a fraction total', parse('400 / 6000 centigray') === null);
+ok('N of M fractions is still accepted', parse('2 of 30 fractions') === 30);
+ok('N of M fx is still accepted', parse('2 of 20 fx') === 20);
+ok('a number left of the label is not used when a plan pair exists', parse('3 Delivered / Total Fractions 2 / 30') === 30);
+ok('a lone 3 left of Total Fractions is not used as the total', parse('3 Total Fractions') === null);
+
+ok('status shows ROS, fx 30, SBRT off', format('roseville', 30, true) === 'ROS · fx 30 · SBRT off');
+ok('status shows RCO, fx 5, SBRT on', format('rancho', 5, false) === 'RCO · fx 5 · SBRT on');
+ok('unread total is fx ?', format('roseville', null, false) === 'ROS · fx ? · SBRT on');
+ok('unknown site is ? with fx total', format('unknown', 30, false) === '? · fx 30 · SBRT on');
 ok('roseville 30 still mutes only ROS SBRT among ROS', muted('roseville', 30, 'ros', true) === true && muted('roseville', 30, 'ros', false) === false);
+ok('row cells are read as whole plan cells when possible', src.includes('function rowCellTextsFromLabel(') && src.includes('collectDeepText(child)'));
 
 if (failed) {
     process.exitCode = 1;

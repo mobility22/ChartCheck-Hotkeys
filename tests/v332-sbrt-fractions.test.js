@@ -23,8 +23,8 @@ ok('Alt+W is ignored when ROS SBRT is muted', /if \(e\.altKey && key === 'w'\) \
 ok('Shift+W is ignored when RCO SBRT is muted', /if \(e\.shiftKey && key === 'w'\) \{\s*if \(!isTemplateHotkeyMuted\('rco', true\)\) applyRcoSbrt\(\);/.test(src));
 ok('other-site Standard hotkeys are also ignored when muted', /if \(e\.altKey && key === 'q'\) \{\s*if \(!isTemplateHotkeyMuted\('ros', false\)\) applyRosStandard\(\);/.test(src) && /if \(e\.shiftKey && key === 'q'\) \{\s*if \(!isTemplateHotkeyMuted\('rco', false\)\) applyRcoStandard\(\);/.test(src));
 
-const parseStart = src.indexOf('    function parseTotalFractionsFromRowText(');
-const parseEnd = src.indexOf('    function readTotalFractions(');
+const parseStart = src.indexOf('    function isDeliveredTotalFractionsLabel(');
+const parseEnd = src.indexOf('    function collectDeepText(');
 ok('parseTotalFractionsFromRowText extract', parseStart >= 0 && parseEnd > parseStart);
 
 const muteStart = src.indexOf('    function shouldMuteSiteSbrt(');
