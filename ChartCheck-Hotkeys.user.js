@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.31
+// @version      3.32
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -983,6 +983,139 @@
         return classifyCenterLine(findCenterLineText());
     }
 
+    // Total fractions come from the Delivered / Total Fractions row
+    // on the Rx / Plan Overview. The plan column (for example 2 / 30)
+    // is used when present; otherwise the Rx total is used.
+    function isDeliveredTotalFractionsLabel(text) {
+        const value = normalizeText(text).toLowerCase();
+
+        return /delivered\s*\/\s*total\s+fractions?/.test(value)
+            || /delivered\s+total\s+fractions?/.test(value);
+    }
+
+    function parseTotalFractionsFromRowText(text) {
+        const value = normalizeText(text);
+
+        if (!value) return null;
+
+        const pairs = [];
+        const pairRe = /(\d+)\s*\/\s*(\d+)/g;
+        let match;
+
+        while ((match = pairRe.exec(value))) {
+            const total = Number(match[2]);
+
+            if (Number.isFinite(total) && total > 0) {
+                pairs.push(total);
+            }
+        }
+
+        if (pairs.length) return pairs[pairs.length - 1];
+
+        const stripped = value
+            .replace(/delivered\s*\/?\s*total\s+fractions?/ig, ' ')
+            .trim();
+        const nums = [];
+        const numRe = /\d+/g;
+
+        while ((match = numRe.exec(stripped))) {
+            const total = Number(match[0]);
+
+            if (Number.isFinite(total) && total > 0 && total <= 200) {
+                nums.push(total);
+            }
+        }
+
+        if (!nums.length || nums.length > 2) return null;
+
+        return nums[nums.length - 1];
+    }
+
+    function readTotalFractions() {
+        const labels = [];
+
+        walkDom(document, el => {
+            if (!el.tagName || isInPatientsSidebar(el) || isInHotkeyPanel(el)) {
+                return;
+            }
+
+            const text = normalizeText(el.textContent);
+
+            if (!isDeliveredTotalFractionsLabel(text)) return;
+
+            for (const child of el.children) {
+                if (isDeliveredTotalFractionsLabel(normalizeText(child.textContent))) {
+                    return;
+                }
+            }
+
+            labels.push(el);
+        });
+
+        let bestTotal = null;
+        let bestLen = Infinity;
+
+        labels.forEach(label => {
+            const chain = ancestorChain(label);
+
+            for (const node of chain) {
+                const text = normalizeText(node.textContent);
+
+                if (text.length > 400) break;
+
+                const total = parseTotalFractionsFromRowText(text);
+
+                if (total != null) {
+                    if (text.length < bestLen) {
+                        bestTotal = total;
+                        bestLen = text.length;
+                    }
+
+                    break;
+                }
+            }
+        });
+
+        return bestTotal;
+    }
+
+    function shouldMuteSiteSbrt(totalFractions) {
+        return totalFractions != null && totalFractions > 5;
+    }
+
+    function isSiteTemplateMuted(site, totalFractions, sitePair, isSbrt) {
+        if (!sitePair) return false;
+
+        if (
+            (site === 'roseville' && sitePair === 'rco')
+            || (site === 'rancho' && sitePair === 'ros')
+        ) {
+            return true;
+        }
+
+        if (
+            isSbrt
+            && shouldMuteSiteSbrt(totalFractions)
+            && (
+                (site === 'roseville' && sitePair === 'ros')
+                || (site === 'rancho' && sitePair === 'rco')
+            )
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function isTemplateHotkeyMuted(sitePair, isSbrt) {
+        return isSiteTemplateMuted(
+            detectPatientSite(),
+            readTotalFractions(),
+            sitePair,
+            isSbrt
+        );
+    }
+
     function hasPatientIdentity(identity) {
         return !!(identity && (identity.id || identity.name));
     }
@@ -1410,6 +1543,7 @@
             button: 'W',
             shortcut: 'Alt+W',
             sitePair: 'ros',
+            sbrt: true,
             run: applyRosSbrt
         },
         {
@@ -1424,6 +1558,7 @@
             button: '⇧W',
             shortcut: 'Shift+W',
             sitePair: 'rco',
+            sbrt: true,
             run: applyRcoSbrt
         },
         {
@@ -1892,6 +2027,10 @@
                 row.classList.add('chartcheck-site-template');
             }
 
+            if (action.sbrt) {
+                row.dataset.sbrt = '1';
+            }
+
             const name = document.createElement('div');
             name.className = 'chartcheck-help-name';
             name.textContent = action.name;
@@ -1906,6 +2045,14 @@
             button.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
+
+                if (
+                    action.sitePair
+                    && isTemplateHotkeyMuted(action.sitePair, !!action.sbrt)
+                ) {
+                    return;
+                }
+
                 action.run();
             });
 
@@ -1952,10 +2099,12 @@
         if (panel) panel.dataset.patientSite = site;
         if (!helpList) return;
 
+        const totalFractions = readTotalFractions();
+
         helpList.querySelectorAll('.chartcheck-help-row').forEach(row => {
             const pair = row.dataset.sitePair || '';
-            const mute = (site === 'roseville' && pair === 'rco')
-                || (site === 'rancho' && pair === 'ros');
+            const isSbrt = row.dataset.sbrt === '1';
+            const mute = isSiteTemplateMuted(site, totalFractions, pair, isSbrt);
 
             row.classList.toggle('chartcheck-site-muted', mute);
         });
@@ -2053,19 +2202,19 @@
         }
 
         if (e.altKey && key === 'q') {
-            applyRosStandard();
+            if (!isTemplateHotkeyMuted('ros', false)) applyRosStandard();
         }
 
         if (e.altKey && key === 'w') {
-            applyRosSbrt();
+            if (!isTemplateHotkeyMuted('ros', true)) applyRosSbrt();
         }
 
         if (e.shiftKey && key === 'q') {
-            applyRcoStandard();
+            if (!isTemplateHotkeyMuted('rco', false)) applyRcoStandard();
         }
 
         if (e.shiftKey && key === 'w') {
-            applyRcoSbrt();
+            if (!isTemplateHotkeyMuted('rco', true)) applyRcoSbrt();
         }
 
         if (e.altKey && key === 'c') {
