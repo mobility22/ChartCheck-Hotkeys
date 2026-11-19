@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.32
+// @version      3.33
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -119,6 +119,7 @@
         reviewState.style.color = statusColor;
         rosevilleEl.textContent = String(rosevilleReviewCount);
         ranchoEl.textContent = String(ranchoReviewCount);
+        updateTemplateStatusLine(detectPatientSite(), readTotalFractions());
     }
 
     function buildStatusContent(status) {
@@ -163,6 +164,11 @@
 
         ranchoLine.appendChild(resetBtn);
         status.appendChild(ranchoLine);
+
+        const templateStatus = document.createElement('div');
+        templateStatus.className = 'chartcheck-template-status';
+        templateStatus.textContent = 'site ? · fx ? · SBRT on';
+        status.appendChild(templateStatus);
     }
 
     const SITE_COUNT_KEYS = {
@@ -429,7 +435,10 @@
     // ============================================================
 
     function normalizeText(text) {
-        return (text || '').replace(/\s+/g, ' ').trim();
+        return (text || '')
+            .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\ufeff]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     function getCurrentPatientIdentity() {
@@ -984,17 +993,28 @@
     }
 
     // Total fractions come from the Delivered / Total Fractions row
-    // on the Rx / Plan Overview. The plan column (for example 2 / 30)
-    // is used when present; otherwise the Rx total is used.
+    // on the Rx / Plan Overview. Values often live in sibling cells,
+    // including inside shadow roots, so ancestor textContent alone
+    // is not enough. The plan column (for example 2 / 30) is used
+    // when present; otherwise the Rx total is used.
     function isDeliveredTotalFractionsLabel(text) {
+        const value = normalizeText(text)
+            .toLowerCase()
+            .replace(/[／⁄|]/g, '/');
+
+        return /delivered\s*\/?\s*total\s*\/?\s*fractions?/.test(value);
+    }
+
+    function isOverviewFieldLabel(text) {
         const value = normalizeText(text).toLowerCase();
 
-        return /delivered\s*\/\s*total\s+fractions?/.test(value)
-            || /delivered\s+total\s+fractions?/.test(value);
+        if (!value || isDeliveredTotalFractionsLabel(value)) return false;
+
+        return /^(dose\s*\/\s*fraction|dose per fraction|total dose|energy|frequency|scheduling|gating|technique|modality|beam energy|approval)\b/.test(value);
     }
 
     function parseTotalFractionsFromRowText(text) {
-        const value = normalizeText(text);
+        const value = normalizeText(text).replace(/[／⁄|]/g, '/');
 
         if (!value) return null;
 
@@ -1010,10 +1030,22 @@
             }
         }
 
+        if (!pairs.length) {
+            const ofRe = /(\d+)\s+of\s+(\d+)/gi;
+
+            while ((match = ofRe.exec(value))) {
+                const total = Number(match[2]);
+
+                if (Number.isFinite(total) && total > 0) {
+                    pairs.push(total);
+                }
+            }
+        }
+
         if (pairs.length) return pairs[pairs.length - 1];
 
         const stripped = value
-            .replace(/delivered\s*\/?\s*total\s+fractions?/ig, ' ')
+            .replace(/delivered\s*\/?\s*total\s*\/?\s*fractions?/ig, ' ')
             .trim();
         const nums = [];
         const numRe = /\d+/g;
@@ -1031,52 +1063,194 @@
         return nums[nums.length - 1];
     }
 
-    function readTotalFractions() {
-        const labels = [];
+    function readTotalFractionsFromCells(cells) {
+        if (!cells || !cells.length) return null;
 
-        walkDom(document, el => {
+        for (let i = 0; i < cells.length; i++) {
+            const cell = cells[i];
+
+            if (!isDeliveredTotalFractionsLabel(cell)) continue;
+
+            const parts = [cell];
+
+            for (let j = i + 1; j < cells.length && j <= i + 4; j++) {
+                const next = cells[j];
+
+                if (!next) break;
+                if (isDeliveredTotalFractionsLabel(next)) break;
+                if (isOverviewFieldLabel(next)) break;
+
+                parts.push(next);
+            }
+
+            const total = parseTotalFractionsFromRowText(parts.join(' '));
+
+            if (total != null) return total;
+        }
+
+        return null;
+    }
+
+    function collectDeepText(root) {
+        const parts = [];
+
+        function visit(node) {
+            if (!node) return;
+
+            if (node.nodeType === 3) {
+                parts.push(node.nodeValue || '');
+                return;
+            }
+
+            if (node.nodeType !== 1) return;
+            if (node.id === 'chartcheck-panel') return;
+
+            const tag = (node.tagName || '').toLowerCase();
+
+            if (tag === 'script' || tag === 'style' || tag === 'noscript') {
+                return;
+            }
+
+            if (node.shadowRoot) visit(node.shadowRoot);
+
+            for (const child of node.childNodes) visit(child);
+        }
+
+        visit(root);
+        return normalizeText(parts.join(' '));
+    }
+
+    function isInnermostDeepText(el, text) {
+        if (el.shadowRoot) {
+            for (const child of el.shadowRoot.children) {
+                if (collectDeepText(child) === text) return false;
+            }
+        }
+
+        for (const child of el.children) {
+            if (collectDeepText(child) === text) return false;
+        }
+
+        return true;
+    }
+
+    function collectOverviewCells(root, cells) {
+        walkDom(root, el => {
             if (!el.tagName || isInPatientsSidebar(el) || isInHotkeyPanel(el)) {
                 return;
             }
 
-            const text = normalizeText(el.textContent);
+            const text = collectDeepText(el);
 
-            if (!isDeliveredTotalFractionsLabel(text)) return;
+            if (!text || text.length > 240) return;
+            if (!isInnermostDeepText(el, text)) return;
 
-            for (const child of el.children) {
-                if (isDeliveredTotalFractionsLabel(normalizeText(child.textContent))) {
+            cells.push(text);
+        });
+    }
+
+    function overviewDocuments() {
+        const docs = [];
+        const seen = new Set();
+
+        function add(doc) {
+            if (!doc || seen.has(doc)) return;
+
+            seen.add(doc);
+            docs.push(doc);
+
+            walkDom(doc, el => {
+                if (!el.tagName || el.tagName.toLowerCase() !== 'iframe') {
                     return;
                 }
+
+                try {
+                    if (el.contentDocument) add(el.contentDocument);
+                } catch (err) {}
+            });
+        }
+
+        add(document);
+        return docs;
+    }
+
+    function readTotalFractionsFromLabel(label) {
+        let node = label;
+
+        for (let i = 0; i < 8 && node; i++) {
+            const parent = node.parentElement;
+            let next = parent;
+
+            if (!next) {
+                const root = typeof node.getRootNode === 'function'
+                    ? node.getRootNode()
+                    : null;
+
+                next = root && root.host ? root.host : null;
             }
 
-            labels.push(el);
+            if (!next) break;
+
+            const children = Array.from(next.children || []);
+            const index = children.indexOf(node);
+            const slice = (index >= 0 ? children.slice(index, index + 3) : children)
+                .map(child => collectDeepText(child))
+                .filter(Boolean);
+            const sliced = parseTotalFractionsFromRowText(slice.join(' '));
+
+            if (sliced != null) return sliced;
+
+            const joined = collectDeepText(next);
+
+            if (joined.length <= 400) {
+                const total = parseTotalFractionsFromRowText(joined);
+
+                if (total != null) return total;
+            }
+
+            node = next;
+        }
+
+        return null;
+    }
+
+    function readTotalFractions() {
+        const cells = [];
+
+        overviewDocuments().forEach(doc => {
+            collectOverviewCells(doc, cells);
         });
 
-        let bestTotal = null;
-        let bestLen = Infinity;
+        const fromCells = readTotalFractionsFromCells(cells);
 
-        labels.forEach(label => {
-            const chain = ancestorChain(label);
+        if (fromCells != null) return fromCells;
 
-            for (const node of chain) {
-                const text = normalizeText(node.textContent);
+        let fallback = null;
 
-                if (text.length > 400) break;
+        overviewDocuments().forEach(doc => {
+            if (fallback != null) return;
 
-                const total = parseTotalFractionsFromRowText(text);
-
-                if (total != null) {
-                    if (text.length < bestLen) {
-                        bestTotal = total;
-                        bestLen = text.length;
-                    }
-
-                    break;
+            walkDom(doc, el => {
+                if (fallback != null) return;
+                if (!el.tagName || isInPatientsSidebar(el) || isInHotkeyPanel(el)) {
+                    return;
                 }
-            }
+
+                const text = collectDeepText(el);
+
+                if (!isDeliveredTotalFractionsLabel(text)) return;
+
+                for (const child of el.children) {
+                    if (isDeliveredTotalFractionsLabel(collectDeepText(child))) {
+                        return;
+                    }
+                }
+
+                fallback = readTotalFractionsFromLabel(el);
+            });
         });
 
-        return bestTotal;
+        return fallback;
     }
 
     function shouldMuteSiteSbrt(totalFractions) {
@@ -1114,6 +1288,37 @@
             sitePair,
             isSbrt
         );
+    }
+
+    function siteStatusCode(site) {
+        if (site === 'roseville') return 'ROS';
+        if (site === 'rancho') return 'RCO';
+
+        return '?';
+    }
+
+    function formatTemplateStatus(site, totalFractions, sbrtOff) {
+        const fx = totalFractions == null ? '?' : String(totalFractions);
+        const sbrt = sbrtOff ? 'off' : 'on';
+
+        return 'site ' + siteStatusCode(site) + ' · fx ' + fx + ' · SBRT ' + sbrt;
+    }
+
+    function updateTemplateStatusLine(site, totalFractions) {
+        if (!statusEl) return;
+
+        const line = statusEl.querySelector('.chartcheck-template-status');
+
+        if (!line) return;
+
+        const pair = site === 'roseville'
+            ? 'ros'
+            : site === 'rancho' ? 'rco' : '';
+        const sbrtOff = !!(
+            pair && isSiteTemplateMuted(site, totalFractions, pair, true)
+        );
+
+        line.textContent = formatTemplateStatus(site, totalFractions, sbrtOff);
     }
 
     function hasPatientIdentity(identity) {
@@ -1736,6 +1941,15 @@
                 pointer-events: none;
             }
 
+            #chartcheck-panel .chartcheck-template-status {
+                margin-top: 8px;
+                font-size: 14px;
+                line-height: 1.3;
+                color: #9fe6b5;
+                white-space: nowrap;
+                pointer-events: none;
+            }
+
             #chartcheck-panel .chartcheck-rancho-line {
                 display: flex;
                 align-items: center;
@@ -2108,12 +2322,24 @@
 
             row.classList.toggle('chartcheck-site-muted', mute);
         });
+
+        updateTemplateStatusLine(site, totalFractions);
     }
 
+    let applyingSiteGray = false;
+
     function refreshPatientSiteGray() {
-        applyPatientSiteGray(detectPatientSite());
-        maybeAutoCopyPatientMrn();
-        updateSiteFrame();
+        if (applyingSiteGray) return;
+
+        applyingSiteGray = true;
+
+        try {
+            applyPatientSiteGray(detectPatientSite());
+            maybeAutoCopyPatientMrn();
+            updateSiteFrame();
+        } finally {
+            applyingSiteGray = false;
+        }
     }
 
     // Opening always shows the full panel (hotkey list included).
@@ -2338,14 +2564,58 @@
     // Init
     // ============================================================
 
-    loadSiteCounts();
-    startAutoReload();
+    let siteGrayRefreshStarted = false;
 
-    window.addEventListener('load', () => {
+    function mutationIsOutsidePanel(mutation) {
+        const node = mutation.target;
+        const el = node && node.nodeType === 1
+            ? node
+            : node && node.parentElement;
+
+        if (!el || typeof el.closest !== 'function') return true;
+
+        return !el.closest('#chartcheck-panel');
+    }
+
+    function startSiteGrayRefresh() {
+        if (siteGrayRefreshStarted) return;
+        if (!document.body) return;
+
+        siteGrayRefreshStarted = true;
         createOverlay();
         refreshPatientSiteGray();
         setInterval(refreshPatientSiteGray, 800);
-    });
+
+        if (typeof MutationObserver !== 'function') return;
+
+        let queued = false;
+        const observer = new MutationObserver(mutations => {
+            if (applyingSiteGray || queued) return;
+            if (!mutations.some(mutationIsOutsidePanel)) return;
+
+            queued = true;
+            setTimeout(() => {
+                queued = false;
+                refreshPatientSiteGray();
+            }, 150);
+        });
+
+        observer.observe(document.documentElement, {
+            subtree: true,
+            childList: true,
+            characterData: true
+        });
+    }
+
+    loadSiteCounts();
+    startAutoReload();
+
+    if (document.readyState === 'complete') {
+        startSiteGrayRefresh();
+    } else {
+        document.addEventListener('DOMContentLoaded', startSiteGrayRefresh);
+        window.addEventListener('load', startSiteGrayRefresh);
+    }
 
     document.addEventListener('keydown', handleHotkeys);
 
