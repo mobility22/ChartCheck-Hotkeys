@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.33
+// @version      3.34
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -119,7 +119,6 @@
         reviewState.style.color = statusColor;
         rosevilleEl.textContent = String(rosevilleReviewCount);
         ranchoEl.textContent = String(ranchoReviewCount);
-        updateTemplateStatusLine(detectPatientSite(), readTotalFractions());
     }
 
     function buildStatusContent(status) {
@@ -164,11 +163,6 @@
 
         ranchoLine.appendChild(resetBtn);
         status.appendChild(ranchoLine);
-
-        const templateStatus = document.createElement('div');
-        templateStatus.className = 'chartcheck-template-status';
-        templateStatus.textContent = '? · fx ? · SBRT on';
-        status.appendChild(templateStatus);
     }
 
     const SITE_COUNT_KEYS = {
@@ -1442,37 +1436,6 @@
         );
     }
 
-    function siteStatusCode(site) {
-        if (site === 'roseville') return 'ROS';
-        if (site === 'rancho') return 'RCO';
-
-        return '?';
-    }
-
-    function formatTemplateStatus(site, totalFractions, sbrtOff) {
-        const fx = totalFractions == null ? '?' : String(totalFractions);
-        const sbrt = sbrtOff ? 'off' : 'on';
-
-        return siteStatusCode(site) + ' · fx ' + fx + ' · SBRT ' + sbrt;
-    }
-
-    function updateTemplateStatusLine(site, totalFractions) {
-        if (!statusEl) return;
-
-        const line = statusEl.querySelector('.chartcheck-template-status');
-
-        if (!line) return;
-
-        const pair = site === 'roseville'
-            ? 'ros'
-            : site === 'rancho' ? 'rco' : '';
-        const sbrtOff = !!(
-            pair && isSiteTemplateMuted(site, totalFractions, pair, true)
-        );
-
-        line.textContent = formatTemplateStatus(site, totalFractions, sbrtOff);
-    }
-
     function hasPatientIdentity(identity) {
         return !!(identity && (identity.id || identity.name));
     }
@@ -2093,15 +2056,6 @@
                 pointer-events: none;
             }
 
-            #chartcheck-panel .chartcheck-template-status {
-                margin-top: 8px;
-                font-size: 14px;
-                line-height: 1.3;
-                color: #9fe6b5;
-                white-space: nowrap;
-                pointer-events: none;
-            }
-
             #chartcheck-panel .chartcheck-rancho-line {
                 display: flex;
                 align-items: center;
@@ -2474,8 +2428,6 @@
 
             row.classList.toggle('chartcheck-site-muted', mute);
         });
-
-        updateTemplateStatusLine(site, totalFractions);
     }
 
     let applyingSiteGray = false;
