@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.35
+// @version      3.36
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -74,7 +74,7 @@
 
     // ============================================================
     // Floating window
-    // One panel: version title, hotkey list, then status.
+    // One panel: version title, button list, then status.
     // Hide and LDH minimize the panel to its title bar in the
     // bottom-right corner. Clicking that bar restores the panel
     // at its previous position.
@@ -1839,7 +1839,7 @@
 
     // ============================================================
     // Actions
-    // Hotkeys and the letter buttons call these same functions.
+    // The panel buttons call these same functions.
     // ============================================================
 
     function goBack() {
@@ -1898,7 +1898,7 @@
             return;
         }
 
-        if (!confirm('Start auto-approve? This will repeatedly click Approve and Load Next. Press Ctrl+Shift+R again to stop.')) {
+        if (!confirm('Start auto-approve? This will repeatedly click Approve and Load Next. Click Stop to end the run.')) {
             return;
         }
 
@@ -1913,55 +1913,49 @@
     }
 
     // ============================================================
-    // Hotkey list inside the floating window
+    // Button list inside the floating window
     // ============================================================
 
     // Keyword labels only. Full behavior:
     // S load the next patient, A approve once,
     // D open the first FAIL link, F click the first failed unchecked box,
-    // Q ROS_Standard, W ROS_SBRT/SRS, Shift+Q RCO_Standard, Shift+W RCO_SBRT,
+    // Q ROS_Standard, W ROS_SBRT/SRS, ⇧Q RCO_Standard, ⇧W RCO_SBRT,
     // R starts Review. Nonstop ON continues past FAIL; OFF stops and
     //   clicks the FAIL link, skipping a FAIL already on the starting
     //   chart. Delay chooses 0 ms or 3000 ms for that wait only.
-    // Ctrl+Shift+R auto-approve until FAIL, X stop,
+    // Auto-approve runs until FAIL, X stop,
     // L and LDH minimize the panel to the title bar; clicking the bar
-    // restores it. Alt+Z still goes back; Back is not shown in this panel.
+    // restores it. Back is not shown in this panel.
     const HELP_ACTIONS = [
         {
             name: 'Next',
             button: 'S',
-            shortcut: 'Alt+S',
             run: loadNextPatient
         },
         {
             name: 'Approve',
             button: 'A',
-            shortcut: 'Alt+A',
             run: approveOnce
         },
         {
             name: 'Fail link',
             button: 'D',
-            shortcut: 'Alt+D',
             run: openFirstFail
         },
         {
             name: 'Fix',
             button: 'F',
-            shortcut: 'Alt+F',
             run: clickFirstFailedUnchecked
         },
         {
             name: 'ROS Standard',
             button: 'Q',
-            shortcut: 'Alt+Q',
             sitePair: 'ros',
             run: applyRosStandard
         },
         {
             name: 'ROS SBRT',
             button: 'W',
-            shortcut: 'Alt+W',
             sitePair: 'ros',
             sbrt: true,
             run: applyRosSbrt
@@ -1969,14 +1963,12 @@
         {
             name: 'RCO Standard',
             button: '⇧Q',
-            shortcut: 'Shift+Q',
             sitePair: 'rco',
             run: applyRcoStandard
         },
         {
             name: 'RCO SBRT',
             button: '⇧W',
-            shortcut: 'Shift+W',
             sitePair: 'rco',
             sbrt: true,
             run: applyRcoSbrt
@@ -1984,7 +1976,6 @@
         {
             name: 'Review',
             button: 'R',
-            shortcut: 'Alt+R',
             run: startReview
         },
         {
@@ -2006,13 +1997,11 @@
         {
             name: 'Auto-approve',
             button: '⌃⇧R',
-            shortcut: 'Ctrl+Shift+R',
             run: startAutoApprove
         },
         {
             name: 'Stop',
             button: 'X',
-            shortcut: 'Alt+X',
             run: stopAuto
         },
         {
@@ -2484,7 +2473,7 @@
                 button.title = action.hint || action.name;
             } else {
                 button.textContent = action.button;
-                button.title = action.hint || action.shortcut || action.name;
+                button.title = action.hint || action.name;
             }
 
             button.setAttribute('aria-label', action.name);
@@ -2671,10 +2660,6 @@
         else hidePanel();
     }
 
-    // ============================================================
-    // Hotkeys
-    // ============================================================
-
     function isEditableTarget(node) {
         if (!node || node.nodeType !== 1) return false;
 
@@ -2685,69 +2670,6 @@
         }
 
         return !!node.isContentEditable;
-    }
-
-    function handleHotkeys(e) {
-        if (e.repeat) return;
-
-        const path = typeof e.composedPath === 'function'
-            ? e.composedPath()
-            : [e.target];
-
-        if (path.some(isEditableTarget)) return;
-
-        const key = e.key.toLowerCase();
-
-        if (e.altKey && key === 's') {
-            e.preventDefault();
-            loadNextPatient();
-        }
-
-        if (e.altKey && key === 'z') {
-            e.preventDefault();
-            goBack();
-        }
-
-        if (e.altKey && key === 'a') {
-            approveOnce();
-        }
-
-        if (e.altKey && key === 'd') {
-            openFirstFail();
-        }
-
-        if (e.altKey && key === 'f') {
-            clickFirstFailedUnchecked();
-        }
-
-        if (e.altKey && key === 'q') {
-            if (!isTemplateHotkeyMuted('ros', false)) applyRosStandard();
-        }
-
-        if (e.altKey && key === 'w') {
-            if (!isTemplateHotkeyMuted('ros', true)) applyRosSbrt();
-        }
-
-        if (e.shiftKey && key === 'q') {
-            if (!isTemplateHotkeyMuted('rco', false)) applyRcoStandard();
-        }
-
-        if (e.shiftKey && key === 'w') {
-            if (!isTemplateHotkeyMuted('rco', true)) applyRcoSbrt();
-        }
-
-        if (e.ctrlKey && e.shiftKey && key === 'r') {
-            e.preventDefault();
-            startAutoApprove();
-        }
-
-        if (e.altKey && key === 'r') {
-            startReview();
-        }
-
-        if (e.altKey && key === 'x') {
-            stopAuto();
-        }
     }
 
     // ============================================================
@@ -2896,8 +2818,6 @@
         document.addEventListener('DOMContentLoaded', startSiteGrayRefresh);
         window.addEventListener('load', startSiteGrayRefresh);
     }
-
-    document.addEventListener('keydown', handleHotkeys);
 
     console.log(`ChartCheck Hotkeys v${SCRIPT_VERSION} Loaded`);
 })();

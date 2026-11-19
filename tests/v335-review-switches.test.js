@@ -10,16 +10,15 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.35', /@version\s+3\.35\b/.test(src));
-ok('no leftover 3.34', !/\b3\.34\b/.test(src));
+ok('@version 3.36', /@version\s+3\.36\b/.test(src));
+ok('no leftover 3.35', !/\b3\.35\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('Quick Review / NS Review / Slow review actions are gone', !src.includes("name: 'Quick Review'") && !src.includes("name: 'NS Review'") && !src.includes("name: 'Slow review'"));
-ok('single Review action on R / Alt+R', /name: 'Review'[\s\S]*?button: 'R'[\s\S]*?shortcut: 'Alt\+R'[\s\S]*?run: startReview/.test(src));
+ok('single Review action on the R button', /name: 'Review'[\s\S]*?button: 'R'[\s\S]*?run: startReview/.test(src) && !/shortcut:/.test(src));
 ok('startAutoReview, startSlowAutoReview, and startSlowNonstopReview are gone', !src.includes('function startAutoReview') && !src.includes('function startSlowAutoReview') && !src.includes('function startSlowNonstopReview'));
 ok('Nonstop and Delay switches take E and C grid spots', /const buttonOrder = \[[\s\S]*?'⌃⇧R',\s*'NONSTOP',\s*'R',\s*'DELAY',/.test(src));
-ok('E and C review hotkeys are gone', !/key === 'c'/.test(src) && !/key === 'e'/.test(src) && !/Alt\+C/.test(src) && !/Alt\+E/.test(src));
-ok('Alt+R starts Review', /if \(e\.altKey && key === 'r'\) \{\s*startReview\(\);/.test(src));
+ok('keyboard hotkeys are gone', !/handleHotkeys/.test(src) && !/altKey/.test(src) && !/Alt\+/.test(src));
 
 ok('Nonstop defaults off and Delay defaults to 3s', src.includes('let nonstopReview = false;') && src.includes('let reviewDelayMs = REVIEW_DELAY_ON_MS;') && src.includes('const REVIEW_DELAY_ON_MS = 3000;') && src.includes('const REVIEW_DELAY_OFF_MS = 0;'));
 ok('review settings persist with GM keys', src.includes("'chartcheck.nonstopReview'") && src.includes("'chartcheck.reviewDelayMs'") && src.includes('function persistReviewSettings(') && src.includes('function loadReviewSettings('));
@@ -180,9 +179,8 @@ async function runReview(startIdx, opts, extra) {
     defaultPos.wrapped.showPanel();
     ok('undragged restore returns to the default corner', defaultPos.style.right === '10px' && defaultPos.style.bottom === '10px' && !defaultPos.style.left);
 
-    const hotkeys = src.slice(src.indexOf('    function handleHotkeys('), src.indexOf('    // ============================================================\n    // Auto-reload'));
-    ok('no keydown for L', !/key === 'l'/.test(hotkeys) && !/key === \"l\"/.test(hotkeys));
-    ok('no keydown for C or E review shortcuts', !/key === 'c'/.test(hotkeys) && !/key === 'e'/.test(hotkeys));
+    ok('no handleHotkeys listener', !src.includes('function handleHotkeys') && !src.includes("addEventListener('keydown', handleHotkeys)"));
+    ok('activity keydown listener remains', src.includes("document.addEventListener('keydown', recordUserActivity, true)"));
 
     if (failed) {
         process.exitCode = 1;

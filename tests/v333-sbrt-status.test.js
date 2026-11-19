@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.35', /@version\s+3\.35\b/.test(src));
-ok('no leftover 3.34', !/\b3\.34\b/.test(src));
+ok('@version 3.36', /@version\s+3\.36\b/.test(src));
+ok('no leftover 3.35', !/\b3\.35\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('muted SBRT still uses chartcheck-site-muted on the row', src.includes("row.classList.toggle('chartcheck-site-muted', mute)"));
 ok('refresh starts if load already completed', src.includes("document.readyState === 'complete'") && src.includes('startSiteGrayRefresh()'));
