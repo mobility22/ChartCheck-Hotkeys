@@ -10,13 +10,10 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.33', /@version\s+3\.33\b/.test(src));
-ok('no leftover 3.32', !/\b3\.32\b/.test(src));
+ok('@version 3.34', /@version\s+3\.34\b/.test(src));
+ok('no leftover 3.33', !/\b3\.33\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
-ok('template status line is in the status block', src.includes("templateStatus.className = 'chartcheck-template-status'"));
-ok('template status stays in the status area, not the help list', /function buildStatusContent\([\s\S]*chartcheck-template-status[\s\S]*?^    \}/m.test(src));
 ok('muted SBRT still uses chartcheck-site-muted on the row', src.includes("row.classList.toggle('chartcheck-site-muted', mute)"));
-ok('applyPatientSiteGray updates the status line', /function applyPatientSiteGray\([\s\S]*?updateTemplateStatusLine\(site, totalFractions\)/.test(src));
 ok('refresh starts if load already completed', src.includes("document.readyState === 'complete'") && src.includes('startSiteGrayRefresh()'));
 ok('refresh also starts on load and DOMContentLoaded', src.includes("document.addEventListener('DOMContentLoaded', startSiteGrayRefresh)") && src.includes("window.addEventListener('load', startSiteGrayRefresh)"));
 ok('MutationObserver re-evaluates outside the panel', src.includes('new MutationObserver') && src.includes('mutationIsOutsidePanel') && src.includes('setInterval(refreshPatientSiteGray, 800)'));
@@ -30,23 +27,19 @@ const labelStart = src.indexOf('    function isDeliveredTotalFractionsLabel(');
 const cellsEnd = src.indexOf('    function collectDeepText(');
 const muteStart = src.indexOf('    function shouldMuteSiteSbrt(');
 const muteEnd = src.indexOf('    function isTemplateHotkeyMuted(');
-const fmtStart = src.indexOf('    function siteStatusCode(');
-const fmtEnd = src.indexOf('    function updateTemplateStatusLine(');
 
 ok('parser extract', helperStart >= 0 && helperMid > helperStart && labelStart >= 0 && cellsEnd > labelStart);
-ok('mute and status extract', muteStart >= 0 && muteEnd > muteStart && fmtStart >= 0 && fmtEnd > fmtStart);
+ok('mute helper extract', muteStart >= 0 && muteEnd > muteStart);
 
 const helpers = new Function(
     src.slice(helperStart, helperMid) +
     src.slice(labelStart, cellsEnd) +
     src.slice(muteStart, muteEnd) +
-    src.slice(fmtStart, fmtEnd) +
-    '\nreturn { normalizeText, isDeliveredTotalFractionsLabel, parseTotalFractionsFromRowText, readTotalFractionsFromCells, shouldMuteSiteSbrt, isSiteTemplateMuted, formatTemplateStatus };'
+    '\nreturn { normalizeText, isDeliveredTotalFractionsLabel, parseTotalFractionsFromRowText, readTotalFractionsFromCells, shouldMuteSiteSbrt, isSiteTemplateMuted };'
 )();
 
 const parse = helpers.parseTotalFractionsFromRowText;
 const fromCells = helpers.readTotalFractionsFromCells;
-const format = helpers.formatTemplateStatus;
 const muted = helpers.isSiteTemplateMuted;
 
 ok('nbsp in the label and 2 / 30 still parse', parse('Delivered\u00A0/\u00A0Total\u00A0Fractions 2\u00A0/\u00A030') === 30);
@@ -82,10 +75,6 @@ ok('N of M fx is still accepted', parse('2 of 20 fx') === 20);
 ok('a number left of the label is not used when a plan pair exists', parse('3 Delivered / Total Fractions 2 / 30') === 30);
 ok('a lone 3 left of Total Fractions is not used as the total', parse('3 Total Fractions') === null);
 
-ok('status shows ROS, fx 30, SBRT off', format('roseville', 30, true) === 'ROS · fx 30 · SBRT off');
-ok('status shows RCO, fx 5, SBRT on', format('rancho', 5, false) === 'RCO · fx 5 · SBRT on');
-ok('unread total is fx ?', format('roseville', null, false) === 'ROS · fx ? · SBRT on');
-ok('unknown site is ? with fx total', format('unknown', 30, false) === '? · fx 30 · SBRT on');
 ok('roseville 30 still mutes only ROS SBRT among ROS', muted('roseville', 30, 'ros', true) === true && muted('roseville', 30, 'ros', false) === false);
 ok('row cells are read as whole plan cells when possible', src.includes('function rowCellTextsFromLabel(') && src.includes('collectDeepText(child)'));
 
