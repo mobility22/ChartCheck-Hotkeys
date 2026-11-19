@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.35', /@version\s+3\.35\b/.test(src));
-ok('no leftover 3.34', !/\b3\.34\b/.test(src));
+ok('@version 3.36', /@version\s+3\.36\b/.test(src));
+ok('no leftover 3.35', !/\b3\.35\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('yellow site frame border unchanged', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?border:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);/.test(src));
 ok('SBRT rows are marked on the help actions', src.includes("sbrt: true") && /name: 'ROS SBRT'[\s\S]*?sbrt: true[\s\S]*?run: applyRosSbrt/.test(src) && /name: 'RCO SBRT'[\s\S]*?sbrt: true[\s\S]*?run: applyRcoSbrt/.test(src));
@@ -19,9 +19,8 @@ ok('SBRT rows get dataset.sbrt', src.includes("row.dataset.sbrt = '1'"));
 ok('muted SBRT uses the same site-muted class', src.includes("row.classList.toggle('chartcheck-site-muted', mute)"));
 ok('applyPatientSiteGray uses isSiteTemplateMuted', /function applyPatientSiteGray\([\s\S]*?isSiteTemplateMuted\(site, totalFractions, pair, isSbrt\)/.test(src));
 ok('template button clicks ignore muted rows', /button\.addEventListener\('click'[\s\S]*?isTemplateHotkeyMuted\(action\.sitePair, !!action\.sbrt\)[\s\S]*?return;[\s\S]*?action\.run\(\)/.test(src));
-ok('Alt+W is ignored when ROS SBRT is muted', /if \(e\.altKey && key === 'w'\) \{\s*if \(!isTemplateHotkeyMuted\('ros', true\)\) applyRosSbrt\(\);/.test(src));
-ok('Shift+W is ignored when RCO SBRT is muted', /if \(e\.shiftKey && key === 'w'\) \{\s*if \(!isTemplateHotkeyMuted\('rco', true\)\) applyRcoSbrt\(\);/.test(src));
-ok('other-site Standard hotkeys are also ignored when muted', /if \(e\.altKey && key === 'q'\) \{\s*if \(!isTemplateHotkeyMuted\('ros', false\)\) applyRosStandard\(\);/.test(src) && /if \(e\.shiftKey && key === 'q'\) \{\s*if \(!isTemplateHotkeyMuted\('rco', false\)\) applyRcoStandard\(\);/.test(src));
+ok('keyboard template handlers are gone', !/e\.altKey/.test(src) && !/e\.shiftKey && key ===/.test(src) && !/handleHotkeys/.test(src));
+ok('muted template clicks remain the only ignore path', /button\.addEventListener\('click'[\s\S]*?isTemplateHotkeyMuted\(action\.sitePair, !!action\.sbrt\)/.test(src));
 
 const parseStart = src.indexOf('    function isDeliveredTotalFractionsLabel(');
 const parseEnd = src.indexOf('    function collectDeepText(');
