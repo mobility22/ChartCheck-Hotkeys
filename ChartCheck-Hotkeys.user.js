@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.37
+// @version      3.38
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -75,7 +75,7 @@
     // ============================================================
     // Floating window
     // One panel: version title, button list, then status.
-    // Hide and LDH minimize the panel to its title bar in the
+    // LDH minimizes the panel to its title bar in the
     // bottom-right corner. Clicking that bar restores the panel
     // at its previous position.
     // ============================================================
@@ -1939,7 +1939,7 @@
     //   clicks the FAIL link, skipping a FAIL already on the starting
     //   chart. Delay chooses 0 ms or 3000 ms for that wait only.
     // Auto-approve runs until FAIL, X stop,
-    // L and LDH minimize the panel to the title bar; clicking the bar
+    // LDH minimizes the panel to the title bar; clicking the bar
     // restores it. Back is not shown in this panel.
     const HELP_ACTIONS = [
         {
@@ -2018,23 +2018,17 @@
             name: 'Stop',
             button: 'X',
             run: stopAuto
-        },
-        {
-            name: 'Hide',
-            button: 'L',
-            hint: 'Minimize to the title bar',
-            run: togglePanelVisibility
         }
     ];
 
-    // Fixed 2-column reading order. Hide fills the slot Back used to occupy.
+    // Fixed 2-column reading order.
     // Next | Approve
     // Auto-approve | Review
     // Nonstop | Delay
     // ROS Standard | ROS SBRT
     // RCO Standard | RCO SBRT
     // Fail link | Fail box
-    // Hide | Stop
+    // Stop
     function orderedHelpActions() {
         const buttonOrder = [
             'S',
@@ -2049,7 +2043,6 @@
             '⇧W',
             'D',
             'F',
-            'L',
             'X'
         ];
         const byButton = new Map(HELP_ACTIONS.map(action => [action.button, action]));
@@ -2717,7 +2710,7 @@
         dockMinimizedPanel();
     }
 
-    // LDH and the Hide button minimize the panel to its title bar.
+    // LDH minimizes the panel to its title bar.
     // Clicking that bar restores the full panel.
     function togglePanelVisibility() {
         ensureOverlay();

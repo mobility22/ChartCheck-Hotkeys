@@ -10,16 +10,16 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.37', /@version\s+3\.37\b/.test(src));
-ok('no leftover 3.36', !/\b3\.36\b/.test(src));
+ok('@version 3.38', /@version\s+3\.38\b/.test(src));
+ok('no leftover 3.37', !/\b3\.37\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 const buttonOrder = src.slice(
     src.indexOf('        const buttonOrder = ['),
     src.indexOf('        ];', src.indexOf('        const buttonOrder = ['))
 );
-ok('final grid order is Next, Approve, Auto-approve, Review, Nonstop, Delay, templates, Fail, Hide, Stop',
-    /'S',\s*'A',\s*'⌃⇧R',\s*'R',\s*'NONSTOP',\s*'DELAY',\s*'Q',\s*'W',\s*'⇧Q',\s*'⇧W',\s*'D',\s*'F',\s*'L',\s*'X'/.test(buttonOrder));
+ok('final grid order through Delay, templates, Fail, then Stop',
+    /'S',\s*'A',\s*'⌃⇧R',\s*'R',\s*'NONSTOP',\s*'DELAY',\s*'Q',\s*'W',\s*'⇧Q',\s*'⇧W',\s*'D',\s*'F',\s*'X'/.test(buttonOrder));
 ok('layout comment matches the swapped grid',
     src.includes('// Auto-approve | Review') && src.includes('// Nonstop | Delay') && !src.includes('// Auto-approve | Nonstop') && !src.includes('// Review | Delay'));
 ok('switches were not moved to a bottom panel group', !src.includes('chartcheck-switches') && !src.includes('reviewSwitchActions') && !src.includes('chartcheck-help-spacer'));
