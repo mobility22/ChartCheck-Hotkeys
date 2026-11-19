@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.39
+// @version      3.40
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -2216,6 +2216,7 @@
             #chartcheck-panel .chartcheck-help-name {
                 flex: 1 1 auto;
                 min-width: 0;
+                font-size: 15px;
                 white-space: nowrap;
             }
 
