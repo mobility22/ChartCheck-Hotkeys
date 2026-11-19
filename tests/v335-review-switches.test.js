@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.37', /@version\s+3\.37\b/.test(src));
-ok('no leftover 3.36', !/\b3\.36\b/.test(src));
+ok('@version 3.38', /@version\s+3\.38\b/.test(src));
+ok('no leftover 3.37', !/\b3\.37\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('Quick Review / NS Review / Slow review actions are gone', !src.includes("name: 'Quick Review'") && !src.includes("name: 'NS Review'") && !src.includes("name: 'Slow review'"));
@@ -33,7 +33,7 @@ ok('minimized panel hides help, status, and LDH', src.includes('#chartcheck-pane
 ok('title click restores the panel', /title\.addEventListener\('click'[\s\S]*?if \(!panelHidden\) return;[\s\S]*?showPanel\(\);/.test(src));
 ok('drag is disabled while minimized', /handle\.addEventListener\('mousedown'[\s\S]*?if \(panelHidden\) return;/.test(src));
 ok('Alt+L is removed', !/Alt\+L/.test(src) && !/key === 'l'/.test(src));
-ok('Hide tooltip no longer mentions Alt+L', /ldh\.title = 'Minimize to the title bar'/.test(src) && /hint: 'Minimize to the title bar'/.test(src));
+ok('LDH tooltip no longer mentions Alt+L', /ldh\.title = 'Minimize to the title bar'/.test(src) && !/hint: 'Minimize to the title bar'/.test(src));
 ok('minimized state is not persisted', !/GM_setValue\([^)]*panelHidden/.test(src) && !/GM_setValue\([^)]*minimiz/.test(src) && !src.includes('chartcheck.panelHidden') && !src.includes('chartcheck.minimized'));
 
 // Persistence fallbacks
