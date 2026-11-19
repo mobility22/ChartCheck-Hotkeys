@@ -11,8 +11,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.39', /@version\s+3\.39\b/.test(src));
-ok('no leftover 3.38', !/\b3\.38\b/.test(src));
+ok('@version 3.40', /@version\s+3\.40\b/.test(src));
+ok('no leftover 3.39', !/\b3\.39\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('handleHotkeys is gone', !src.includes('function handleHotkeys') && !src.includes('handleHotkeys'));
