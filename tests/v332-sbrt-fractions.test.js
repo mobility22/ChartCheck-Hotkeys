@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.40', /@version\s+3\.40\b/.test(src));
-ok('no leftover 3.39', !/\b3\.39\b/.test(src));
+ok('@version 3.41', /@version\s+3\.41\b/.test(src));
+ok('no leftover 3.40', !/\b3\.40\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('yellow site frame border unchanged', /#chartcheck-panel \.chartcheck-site-frame\s*\{[\s\S]*?border:\s*2px solid rgba\(255,\s*214,\s*0,\s*0\.7\);/.test(src));
 ok('SBRT rows are marked on the help actions', src.includes("sbrt: true") && /name: 'ROS SBRT'[\s\S]*?sbrt: true[\s\S]*?run: applyRosSbrt/.test(src) && /name: 'RCO SBRT'[\s\S]*?sbrt: true[\s\S]*?run: applyRcoSbrt/.test(src));
