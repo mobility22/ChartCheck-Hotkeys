@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.40
+// @version      3.41
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -125,6 +125,19 @@
         ranchoEl.textContent = String(ranchoReviewCount);
     }
 
+    function setReviewNote(text) {
+        if (!statusEl) return;
+
+        const note = statusEl.querySelector('.chartcheck-review-note');
+
+        if (!note) return;
+
+        const value = (text || '').trim();
+
+        note.textContent = value;
+        note.classList.toggle('chartcheck-review-note-on', !!value);
+    }
+
     function buildStatusContent(status) {
         status.appendChild(document.createTextNode('Auto Review: '));
 
@@ -167,6 +180,10 @@
 
         ranchoLine.appendChild(resetBtn);
         status.appendChild(ranchoLine);
+
+        const reviewNote = document.createElement('div');
+        reviewNote.className = 'chartcheck-review-note';
+        status.appendChild(reviewNote);
     }
 
     const SITE_COUNT_KEYS = {
@@ -463,17 +480,17 @@
     // Template Handling
     // ============================================================
 
-    function getTemplateSelects() {
-        const validTemplates = [
-            'ROS_Standard',
-            'ROS_SBRT/SRS',
-            'RCO_Standard',
-            'RCO_SBRT'
-        ];
+    const VALID_CHECK_TEMPLATES = [
+        'ROS_Standard',
+        'ROS_SBRT/SRS',
+        'RCO_Standard',
+        'RCO_SBRT'
+    ];
 
+    function getTemplateSelects() {
         return findSelects().filter(select =>
             Array.from(select.options).some(option =>
-                validTemplates.includes(option.text)
+                VALID_CHECK_TEMPLATES.includes(option.text)
             )
         );
     }
@@ -536,6 +553,180 @@
                 clickYesUpdate();
             }
         }, 500);
+    }
+
+    function selectedTemplateText(select) {
+        if (!select || select.selectedIndex == null || select.selectedIndex < 0) {
+            return '';
+        }
+
+        const option = select.options[select.selectedIndex];
+
+        return (option && option.text ? String(option.text) : '').trim();
+    }
+
+    function isTemplateSelectFilled(select) {
+        return VALID_CHECK_TEMPLATES.includes(selectedTemplateText(select));
+    }
+
+    // Decide what Review should do when a plan has no check
+    // template selected. Standard is always possible for the
+    // current site. SBRT is also possible when total fractions
+    // are 5 or fewer, so that case is left for a manual pick.
+    function templateReviewDecision(site, totalFractions, selectStates) {
+        const states = Array.isArray(selectStates) ? selectStates : [];
+        const unfilledIndexes = [];
+
+        states.forEach((state, index) => {
+            if (!state || !state.filled) unfilledIndexes.push(index);
+        });
+
+        if (unfilledIndexes.length === 0) {
+            return { action: 'ok' };
+        }
+
+        const knownSite = site === 'roseville' || site === 'rancho';
+        const knownFx = totalFractions != null && Number.isFinite(totalFractions) && totalFractions > 0;
+
+        if (!knownSite || !knownFx) {
+            return {
+                action: 'stop',
+                message: 'Template needed: site or fx unknown, pick manually'
+            };
+        }
+
+        if (totalFractions <= 5) {
+            return {
+                action: 'stop',
+                message: 'Template needed (fx<=5): pick Std or SBRT'
+            };
+        }
+
+        return {
+            action: 'auto',
+            templateName: site === 'roseville' ? 'ROS_Standard' : 'RCO_Standard',
+            unfilledIndexes
+        };
+    }
+
+    function checksNeedTemplatePrompt() {
+        return !!findElementByText(
+            'Select check templates on the right to calculate checks.'
+        );
+    }
+
+    function hasCheckResults() {
+        let found = false;
+
+        walkDom(document, el => {
+            if (!found && el.getAttribute && el.getAttribute('pass-state')) {
+                found = true;
+            }
+        });
+
+        return found;
+    }
+
+    function isLoadNextEnabled() {
+        const button = findButtons().find(
+            b => b.textContent.trim() === 'Load Next Patient'
+        );
+
+        return !!(button && !button.disabled);
+    }
+
+    function areChecksReady() {
+        if (checksNeedTemplatePrompt()) return false;
+
+        return hasCheckResults() || isLoadNextEnabled();
+    }
+
+    function assignTemplateToSelects(templateName, selects) {
+        let assigned = 0;
+        let missed = 0;
+
+        selects.forEach(select => {
+            const option = Array.from(select.options).find(
+                o => o.text === templateName
+            );
+
+            if (!option) {
+                missed++;
+                return;
+            }
+
+            select.value = option.value;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            assigned++;
+        });
+
+        return { assigned, missed };
+    }
+
+    async function waitForChecksReady(timeoutMs = 20000) {
+        const start = Date.now();
+
+        while (Date.now() - start < timeoutMs) {
+            if (!autoReviewActive) return false;
+            if (areChecksReady()) return true;
+            await sleep(CONFIG.dialogPollMs);
+        }
+
+        return areChecksReady();
+    }
+
+    async function applyTemplateAndWait(templateName, selects) {
+        const result = assignTemplateToSelects(templateName, selects);
+
+        if (!result.assigned || result.missed) return false;
+
+        await sleep(500);
+        if (!autoReviewActive) return false;
+
+        if (clickButtonByText('Apply Check Templates Update')) {
+            clickYesUpdate();
+        }
+
+        return waitForChecksReady();
+    }
+
+    async function ensureReviewTemplates() {
+        const selects = getTemplateSelects();
+        const states = selects.map(select => ({
+            filled: isTemplateSelectFilled(select),
+            text: selectedTemplateText(select)
+        }));
+
+        if (selects.length === 0 && checksNeedTemplatePrompt()) {
+            setReviewNote('Template needed: site or fx unknown, pick manually');
+            return 'stop';
+        }
+
+        const decision = templateReviewDecision(
+            detectPatientSite(),
+            readTotalFractions(),
+            states
+        );
+
+        if (decision.action === 'ok') return 'ok';
+
+        if (decision.action === 'stop') {
+            setReviewNote(decision.message);
+            return 'stop';
+        }
+
+        const targets = (decision.unfilledIndexes || [])
+            .map(index => selects[index])
+            .filter(Boolean);
+
+        const applied = await applyTemplateAndWait(decision.templateName, targets);
+
+        if (!applied) {
+            setReviewNote('Template needed: checks not ready, pick manually');
+            return 'stop';
+        }
+
+        return 'ok';
     }
 
     // ============================================================
@@ -1694,6 +1885,7 @@
         autoReviewCount = 0;
         autoReviewMode = currentNonstop() ? 'Nonstop' : 'Review';
         autoReviewActive = true;
+        setReviewNote('');
         updateOverlay();
 
         try {
@@ -1710,6 +1902,11 @@
                     await sleep(delayNow);
                     if (!autoReviewActive) break;
                 }
+
+                const templateReady = await ensureReviewTemplates();
+
+                if (!autoReviewActive) break;
+                if (templateReady !== 'ok') break;
 
                 const continueOnFail = currentNonstop();
                 autoReviewMode = continueOnFail ? 'Nonstop' : 'Review';
@@ -2168,6 +2365,19 @@
                 white-space: nowrap;
                 border-top: 1px solid rgba(0, 255, 102, 0.45);
                 pointer-events: none;
+            }
+
+            #chartcheck-panel .chartcheck-review-note {
+                display: none;
+                margin-top: 8px;
+                font-size: 16px;
+                line-height: 1.3;
+                white-space: normal;
+                color: #ffd24d;
+            }
+
+            #chartcheck-panel .chartcheck-review-note.chartcheck-review-note-on {
+                display: block;
             }
 
             #chartcheck-panel .chartcheck-rancho-line {

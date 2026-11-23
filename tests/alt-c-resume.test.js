@@ -10,6 +10,7 @@ const getCurrentPatientIdentity=()=>({id:S.idx});const detectPatientSite=()=>'ro
 const loadNextPatient=()=>{if(S.idx+1>=S.charts.length)return false;S.idx++;if(S.flipAt===S.idx){if(Object.prototype.hasOwnProperty.call(S,'flipTo'))S.nonstop=S.flipTo;if(Object.prototype.hasOwnProperty.call(S,'flipDelay'))S.delayMs=S.flipDelay;}return true};
 const waitForPatientIdentityChange=async()=>({id:S.idx});const patientChanged=(a,b)=>a&&b&&a.id!==b.id;
 const recordReviewedChart=()=>{autoReviewCount++};const canApproveAndLoadNext=()=>true;
+const setReviewNote=()=>{};const ensureReviewTemplates=async()=>'ok';
 const console={log:()=>{}};`;
 const make=new Function('S',prelude+fnSrc+'return reviewUntilFail;');
 async function t(name,charts,startIdx,opts,expIdx,expCf,extra){

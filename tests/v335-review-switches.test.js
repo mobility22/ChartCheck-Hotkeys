@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.40', /@version\s+3\.40\b/.test(src));
-ok('no leftover 3.39', !/\b3\.39\b/.test(src));
+ok('@version 3.41', /@version\s+3\.41\b/.test(src));
+ok('no leftover 3.40', !/\b3\.40\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('Quick Review / NS Review / Slow review actions are gone', !src.includes("name: 'Quick Review'") && !src.includes("name: 'NS Review'") && !src.includes("name: 'Slow review'"));
@@ -76,6 +76,7 @@ const loadNextPatient=()=>{if(S.idx+1>=S.charts.length)return false;S.idx++;if(S
 const waitForPatientIdentityChange=async()=>{S.waits.push(S.idx);return {id:S.idx};};
 const patientChanged=(a,b)=>a&&b&&a.id!==b.id;
 const recordReviewedChart=()=>{autoReviewCount++};const canApproveAndLoadNext=()=>true;
+const setReviewNote=()=>{};const ensureReviewTemplates=async()=>'ok';
 const console={log:()=>{}};`;
 const make = new Function('S', prelude + fnSrc + 'return reviewUntilFail;');
 const charts = [false, false, true, false, false, true, false];
