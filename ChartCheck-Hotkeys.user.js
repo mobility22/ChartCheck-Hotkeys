@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.41
+// @version      3.42
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -591,14 +591,14 @@
         if (!knownSite || !knownFx) {
             return {
                 action: 'stop',
-                message: 'Template needed: site or fx unknown, pick manually'
+                message: 'Template needed'
             };
         }
 
         if (totalFractions <= 5) {
             return {
                 action: 'stop',
-                message: 'Template needed (fx<=5): pick Std or SBRT'
+                message: 'Template needed'
             };
         }
 
@@ -698,7 +698,7 @@
         }));
 
         if (selects.length === 0 && checksNeedTemplatePrompt()) {
-            setReviewNote('Template needed: site or fx unknown, pick manually');
+            setReviewNote('Template needed');
             return 'stop';
         }
 
@@ -2369,10 +2369,14 @@
 
             #chartcheck-panel .chartcheck-review-note {
                 display: none;
+                width: 0;
+                min-width: 100%;
+                box-sizing: border-box;
                 margin-top: 8px;
                 font-size: 16px;
                 line-height: 1.3;
                 white-space: normal;
+                overflow-wrap: break-word;
                 color: #ffd24d;
             }
 
