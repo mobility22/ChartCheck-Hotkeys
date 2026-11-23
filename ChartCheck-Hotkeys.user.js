@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.42
+// @version      3.43
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -569,33 +569,283 @@
         return VALID_CHECK_TEMPLATES.includes(selectedTemplateText(select));
     }
 
-    // Decide what Review should do when a plan has no check
-    // template selected. Standard is always possible for the
-    // current site. SBRT is also possible when total fractions
-    // are 5 or fewer, so that case is left for a manual pick.
-    function templateReviewDecision(site, totalFractions, selectStates) {
-        const states = Array.isArray(selectStates) ? selectStates : [];
-        const unfilledIndexes = [];
+    function isValidSiteTemplate(text) {
+        return VALID_CHECK_TEMPLATES.includes((text || '').trim());
+    }
+
+    function isOakTemplateDefault(text) {
+        return /^OAK_/i.test((text || '').trim());
+    }
+
+    function isRedTemplateColor(color) {
+        if (color == null) return false;
+
+        const value = String(color).trim().toLowerCase();
+
+        if (!value || value === 'transparent' || value === 'inherit' || value === 'none') {
+            return false;
+        }
+
+        if (
+            value === 'rgba(0, 0, 0, 0)'
+            || value === 'rgb(0, 0, 0, 0)'
+            || value === 'rgba(0,0,0,0)'
+        ) {
+            return false;
+        }
+
+        let r;
+        let g;
+        let b;
+        const rgb = /^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)/.exec(value);
+
+        if (rgb) {
+            r = Number(rgb[1]);
+            g = Number(rgb[2]);
+            b = Number(rgb[3]);
+        } else {
+            const hex = /^#([0-9a-f]{3,8})$/.exec(value);
+
+            if (hex) {
+                const h = hex[1];
+
+                if (h.length === 3 || h.length === 4) {
+                    r = parseInt(h[0] + h[0], 16);
+                    g = parseInt(h[1] + h[1], 16);
+                    b = parseInt(h[2] + h[2], 16);
+                } else {
+                    r = parseInt(h.slice(0, 2), 16);
+                    g = parseInt(h.slice(2, 4), 16);
+                    b = parseInt(h.slice(4, 6), 16);
+                }
+            } else if (
+                value === 'red'
+                || value === 'darkred'
+                || value === 'crimson'
+                || value === 'firebrick'
+                || value === 'tomato'
+                || value === 'orangered'
+            ) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        if (![r, g, b].every(Number.isFinite)) return false;
+
+        return r >= 140 && r > g + 40 && r > b + 40 && g <= 160 && b <= 160;
+    }
+
+    function elementBackgroundColor(el) {
+        if (!el || el.nodeType !== 1) return '';
+
+        if (el.style && el.style.backgroundColor) {
+            return el.style.backgroundColor;
+        }
+
+        if (typeof getComputedStyle === 'function') {
+            try {
+                const style = getComputedStyle(el);
+
+                if (style) {
+                    return style.backgroundColor || style.background || '';
+                }
+            } catch (err) {}
+        }
+
+        return '';
+    }
+
+    function hasRedTemplateBackground(select) {
+        let node = select;
+
+        for (let i = 0; i < 8 && node && node !== document; i++) {
+            if (isRedTemplateColor(elementBackgroundColor(node))) {
+                return true;
+            }
+
+            const parent = node.parentElement;
+            let next = parent;
+
+            if (!next && typeof node.getRootNode === 'function') {
+                const root = node.getRootNode();
+
+                next = root && root.host ? root.host : null;
+            }
+
+            node = next;
+        }
+
+        return false;
+    }
+
+    function isTemplateSelectUnselected(select) {
+        const text = selectedTemplateText(select);
+
+        if (isValidSiteTemplate(text)) return false;
+
+        return isOakTemplateDefault(text) || hasRedTemplateBackground(select);
+    }
+
+    function parsePlanTreeLabel(text) {
+        const value = normalizeText(text);
+
+        if (!value || value.length > 120) return '';
+
+        const match = /^plan:\s*(.+)$/i.exec(value);
+
+        return match ? normalizeText(match[1]) : '';
+    }
+
+    function normalizePlanName(name) {
+        const value = normalizeText(name);
+
+        if (!value) return '';
+
+        return value.replace(/^plan:\s*/i, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    function planNamesMatch(left, right) {
+        const a = normalizePlanName(left);
+        const b = normalizePlanName(right);
+
+        return !!a && !!b && a === b;
+    }
+
+    function isPlanNameLabel(text) {
+        const value = normalizeText(text).toLowerCase().replace(/:$/, '');
+
+        return value === 'plan name';
+    }
+
+    function readPlanNameFromCells(cells) {
+        if (!cells || !cells.length) return '';
+
+        for (let i = 0; i < cells.length; i++) {
+            if (!isPlanNameLabel(cells[i])) continue;
+
+            for (let j = i + 1; j < cells.length && j <= i + 3; j++) {
+                const next = normalizeText(cells[j]);
+
+                if (!next) continue;
+                if (isPlanNameLabel(next)) break;
+                if (isDeliveredTotalFractionsLabel(next)) break;
+                if (isOverviewFieldLabel(next)) break;
+
+                return next;
+            }
+        }
+
+        return '';
+    }
+
+    // Match each template dropdown to its own Plan Overview table
+    // by plan name (tree "Plan: X" vs the table "Plan name" cell),
+    // or by document order when a name is missing. Filled plans are
+    // left untouched and are not used for the fraction decision.
+    function resolvePlanTemplateContexts(plans, overviews) {
+        const list = Array.isArray(plans) ? plans : [];
+        const tables = Array.isArray(overviews) ? overviews : [];
+
+        return list.map((plan, index) => {
+            if (plan && plan.filled) {
+                return {
+                    filled: true,
+                    unselected: false,
+                    tableFound: false,
+                    totalFractions: null
+                };
+            }
+
+            const unselected = !plan || plan.unselected !== false;
+            const planName = plan && plan.planName ? plan.planName : '';
+            let table = null;
+
+            if (planName) {
+                table = tables.find(item => planNamesMatch(item && item.planName, planName)) || null;
+            }
+
+            if (!table) {
+                const byOrder = tables[index] || null;
+                const orderName = byOrder && byOrder.planName;
+
+                if (!planName || !normalizePlanName(orderName)) {
+                    table = byOrder;
+                }
+            }
+
+            if (!unselected) {
+                return {
+                    filled: false,
+                    unselected: false,
+                    tableFound: false,
+                    totalFractions: null
+                };
+            }
+
+            if (!table) {
+                return {
+                    filled: false,
+                    unselected: true,
+                    tableFound: false,
+                    totalFractions: null
+                };
+            }
+
+            return {
+                filled: false,
+                unselected: true,
+                tableFound: true,
+                totalFractions: table.totalFractions
+            };
+        });
+    }
+
+    // Decide what Review should do for unselected plans only.
+    // Unselected means a red template dropdown and/or an OAK_*
+    // default. Already-selected ROS_/RCO_ templates are ignored.
+    // Each unselected plan uses its own overview table's total
+    // fractions. Standard is always possible for the current site.
+    // SBRT is also possible when that plan's total fractions are
+    // 5 or fewer, so that case is left for a manual pick.
+    function templateReviewDecision(site, planStates) {
+        const states = Array.isArray(planStates) ? planStates : [];
+        const autoIndexes = [];
+        let pending = false;
+        let shouldStop = false;
 
         states.forEach((state, index) => {
-            if (!state || !state.filled) unfilledIndexes.push(index);
+            if (!state || state.filled) return;
+
+            pending = true;
+
+            if (state.unselected === false) {
+                shouldStop = true;
+                return;
+            }
+
+            const totalFractions = state.totalFractions;
+            const knownFx = state.tableFound
+                && totalFractions != null
+                && Number.isFinite(totalFractions)
+                && totalFractions > 0;
+
+            if (!knownFx || totalFractions <= 5) {
+                shouldStop = true;
+                return;
+            }
+
+            autoIndexes.push(index);
         });
 
-        if (unfilledIndexes.length === 0) {
+        if (!pending) {
             return { action: 'ok' };
         }
 
         const knownSite = site === 'roseville' || site === 'rancho';
-        const knownFx = totalFractions != null && Number.isFinite(totalFractions) && totalFractions > 0;
 
-        if (!knownSite || !knownFx) {
-            return {
-                action: 'stop',
-                message: 'Template needed'
-            };
-        }
-
-        if (totalFractions <= 5) {
+        if (!knownSite || shouldStop) {
             return {
                 action: 'stop',
                 message: 'Template needed'
@@ -605,7 +855,7 @@
         return {
             action: 'auto',
             templateName: site === 'roseville' ? 'ROS_Standard' : 'RCO_Standard',
-            unfilledIndexes
+            unfilledIndexes: autoIndexes
         };
     }
 
@@ -690,22 +940,193 @@
         return waitForChecksReady();
     }
 
+    function countInnermostFractionsLabels(root) {
+        let count = 0;
+
+        if (!root) return 0;
+
+        walkDom(root, el => {
+            if (!el.tagName) return;
+
+            const text = collectDeepText(el);
+
+            if (!isDeliveredTotalFractionsLabel(text)) return;
+            if (!isInnermostDeepText(el, text) && text !== 'Delivered / Total Fractions') {
+                return;
+            }
+
+            for (const child of el.children || []) {
+                if (isDeliveredTotalFractionsLabel(collectDeepText(child))) {
+                    return;
+                }
+            }
+
+            count++;
+        });
+
+        return count;
+    }
+
+    function collectPlanTreeNames(root) {
+        const names = [];
+
+        if (!root) return names;
+
+        const directText = collectDeepText(root);
+        const direct = parsePlanTreeLabel(directText);
+
+        if (direct && isInnermostDeepText(root, directText)) {
+            names.push(direct);
+            return names;
+        }
+
+        walkDom(root, el => {
+            if (!el.tagName) return;
+
+            const text = collectDeepText(el);
+            const name = parsePlanTreeLabel(text);
+
+            if (name && isInnermostDeepText(el, text)) {
+                names.push(name);
+            }
+        });
+
+        return names;
+    }
+
+    function findPlanNameNearSelect(select) {
+        let node = select;
+
+        for (let i = 0; i < 14 && node && node !== document; i++) {
+            let sib = node.previousElementSibling;
+
+            while (sib) {
+                const names = collectPlanTreeNames(sib);
+
+                if (names.length === 1) return names[0];
+
+                sib = sib.previousElementSibling;
+            }
+
+            const own = collectPlanTreeNames(node);
+
+            if (own.length === 1) return own[0];
+
+            const parent = node.parentElement;
+            let next = parent;
+
+            if (!next && typeof node.getRootNode === 'function') {
+                const root = node.getRootNode();
+
+                next = root && root.host ? root.host : null;
+            }
+
+            node = next;
+        }
+
+        return '';
+    }
+
+    function readOverviewRecordFromFractionsLabel(label) {
+        const rowTexts = rowCellTextsFromLabel(label);
+        let totalFractions = rowTexts ? readTotalFractionsFromCells(rowTexts) : null;
+        let planName = '';
+        let node = label;
+
+        for (let i = 0; i < 12 && node; i++) {
+            if (node !== label && countInnermostFractionsLabels(node) > 1) {
+                break;
+            }
+
+            const cells = [];
+
+            collectOverviewCells(node, cells);
+
+            if (!planName) planName = readPlanNameFromCells(cells);
+            if (totalFractions == null) {
+                totalFractions = readTotalFractionsFromCells(cells);
+            }
+
+            if (planName && totalFractions != null) {
+                return { planName, totalFractions };
+            }
+
+            const parent = node.parentElement;
+            let next = parent;
+
+            if (!next) {
+                const root = typeof node.getRootNode === 'function'
+                    ? node.getRootNode()
+                    : null;
+
+                next = root && root.host ? root.host : null;
+            }
+
+            node = next;
+        }
+
+        if (totalFractions == null && !planName) return null;
+
+        return { planName, totalFractions };
+    }
+
+    function findOverviewPlanRecords() {
+        const records = [];
+
+        overviewDocuments().forEach(doc => {
+            walkDom(doc, el => {
+                if (!el.tagName || isInPatientsSidebar(el) || isInHotkeyPanel(el)) {
+                    return;
+                }
+
+                const text = collectDeepText(el);
+
+                if (!isDeliveredTotalFractionsLabel(text)) return;
+                if (!isInnermostDeepText(el, text) && text !== 'Delivered / Total Fractions') {
+                    for (const child of el.children) {
+                        if (isDeliveredTotalFractionsLabel(collectDeepText(child))) {
+                            return;
+                        }
+                    }
+                }
+
+                const record = readOverviewRecordFromFractionsLabel(el);
+
+                if (record && record.totalFractions != null) {
+                    records.push(record);
+                }
+            });
+        });
+
+        return records;
+    }
+
+    function describeTemplateSelect(select) {
+        const text = selectedTemplateText(select);
+        const filled = isValidSiteTemplate(text);
+        const unselected = isTemplateSelectUnselected(select);
+
+        return {
+            text,
+            filled,
+            unselected,
+            planName: findPlanNameNearSelect(select)
+        };
+    }
+
     async function ensureReviewTemplates() {
         const selects = getTemplateSelects();
-        const states = selects.map(select => ({
-            filled: isTemplateSelectFilled(select),
-            text: selectedTemplateText(select)
-        }));
 
         if (selects.length === 0 && checksNeedTemplatePrompt()) {
             setReviewNote('Template needed');
             return 'stop';
         }
 
+        const plans = selects.map(describeTemplateSelect);
+        const contexts = resolvePlanTemplateContexts(plans, findOverviewPlanRecords());
         const decision = templateReviewDecision(
             detectPatientSite(),
-            readTotalFractions(),
-            states
+            contexts
         );
 
         if (decision.action === 'ok') return 'ok';
