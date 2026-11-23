@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.42', /@version\s+3\.42\b/.test(src));
-ok('no leftover 3.41', !/\b3\.41\b/.test(src));
+ok('@version 3.43', /@version\s+3\.43\b/.test(src));
+ok('no leftover 3.42', !/\b3\.42\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('panel still sizes to its controls with max-content', /#chartcheck-panel \{\s*[\s\S]*?width:\s*max-content;/.test(src));
@@ -29,11 +29,19 @@ const templateReviewDecision = new Function(
     src.slice(start, end) + '\nreturn templateReviewDecision;'
 )();
 
-const unfilled = [{ filled: false, text: 'OAK_Standard' }];
-ok('fx 5 status is Template needed', templateReviewDecision('roseville', 5, unfilled).message === 'Template needed');
-ok('unknown fx status is Template needed', templateReviewDecision('roseville', null, unfilled).message === 'Template needed');
-ok('unknown site status is Template needed', templateReviewDecision('unknown', 30, unfilled).message === 'Template needed');
-ok('fx 30 auto path is unchanged', templateReviewDecision('roseville', 30, unfilled).action === 'auto' && templateReviewDecision('roseville', 30, unfilled).templateName === 'ROS_Standard');
+function plan(fx, filled) {
+    return {
+        filled: !!filled,
+        unselected: !filled,
+        tableFound: !filled && fx != null,
+        totalFractions: filled ? null : fx
+    };
+}
+
+ok('fx 5 status is Template needed', templateReviewDecision('roseville', [plan(5)]).message === 'Template needed');
+ok('unknown fx status is Template needed', templateReviewDecision('roseville', [plan(null)]).message === 'Template needed');
+ok('unknown site status is Template needed', templateReviewDecision('unknown', [plan(30)]).message === 'Template needed');
+ok('fx 30 auto path is unchanged', templateReviewDecision('roseville', [plan(30)]).action === 'auto' && templateReviewDecision('roseville', [plan(30)]).templateName === 'ROS_Standard');
 
 if (failed) {
     process.exitCode = 1;
