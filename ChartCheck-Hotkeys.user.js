@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.47
+// @version      3.48
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -1889,19 +1889,462 @@
 
     function isFractionsLabelElement(el) {
         if (!el || !el.tagName) return false;
+        if (isInHotkeyPanel(el) || isInNavSidebar(el)) return false;
 
         const text = collectDeepText(el);
 
         if (!isDeliveredTotalFractionsLabel(text)) return false;
-        if (!isInnermostDeepText(el, text) && text !== 'Delivered / Total Fractions') {
-            for (const child of el.children || []) {
-                if (isDeliveredTotalFractionsLabel(collectDeepText(child))) {
-                    return false;
-                }
+
+        const kids = [];
+
+        if (el.shadowRoot) {
+            Array.from(el.shadowRoot.children || []).forEach(child => kids.push(child));
+        }
+
+        Array.from(el.children || []).forEach(child => kids.push(child));
+
+        for (let i = 0; i < kids.length; i++) {
+            if (isDeliveredTotalFractionsLabel(collectDeepText(kids[i]))) {
+                return false;
             }
         }
 
         return true;
+    }
+
+    function walkComposedTree(root, visit, seen) {
+        const visited = seen || new Set();
+
+        function walk(node) {
+            if (!node || visited.has(node)) return;
+
+            if (node.nodeType === 9) {
+                walk(node.documentElement);
+                return;
+            }
+
+            if (node.nodeType === 11) {
+                const fragKids = node.children || [];
+
+                for (let i = 0; i < fragKids.length; i++) walk(fragKids[i]);
+                return;
+            }
+
+            if (node.nodeType !== 1) return;
+            if (node.id === 'chartcheck-panel') return;
+            if (isInHotkeyPanel(node)) return;
+
+            visited.add(node);
+            visit(node);
+
+            if (node.shadowRoot) walk(node.shadowRoot);
+
+            const tag = (node.tagName || '').toLowerCase();
+
+            if (tag === 'slot' && typeof node.assignedElements === 'function') {
+                const assigned = node.assignedElements();
+
+                for (let i = 0; i < assigned.length; i++) walk(assigned[i]);
+                return;
+            }
+
+            const children = node.children || [];
+
+            for (let i = 0; i < children.length; i++) walk(children[i]);
+        }
+
+        walk(root);
+        return visited;
+    }
+
+    function composedElementOrderMap(root) {
+        const ranks = new Map();
+        let order = 0;
+
+        walkComposedTree(root, el => {
+            ranks.set(el, order++);
+        });
+
+        return ranks;
+    }
+
+    function firstElementByTag(root, tagName) {
+        const want = String(tagName || '').toLowerCase();
+        const kids = root && root.children ? Array.from(root.children) : [];
+
+        for (let i = 0; i < kids.length; i++) {
+            if ((kids[i].tagName || '').toLowerCase() === want) return kids[i];
+        }
+
+        return null;
+    }
+
+    function tableHeadRow(table) {
+        if (!table) return null;
+
+        const thead = firstElementByTag(table, 'thead');
+
+        if (thead) return firstElementByTag(thead, 'tr');
+
+        return firstElementByTag(table, 'tr');
+    }
+
+    function tableBodyRows(table) {
+        const rows = [];
+
+        if (!table) return rows;
+
+        const tbody = firstElementByTag(table, 'tbody');
+        const source = tbody || table;
+        const kids = Array.from(source.children || []);
+
+        for (let i = 0; i < kids.length; i++) {
+            if ((kids[i].tagName || '').toLowerCase() === 'tr') rows.push(kids[i]);
+        }
+
+        return rows;
+    }
+
+    function tableRowCells(tr) {
+        return Array.from((tr && tr.children) || []).filter(cell => {
+            const tag = (cell.tagName || '').toLowerCase();
+
+            return tag === 'th' || tag === 'td';
+        });
+    }
+
+    function planNameFromHeaderCell(text) {
+        const value = normalizeText(text);
+
+        if (!value) return '';
+
+        return planNameFromLabeledText(value);
+    }
+
+    function parsePlanCellFractionTotal(text) {
+        const value = normalizeText(text).replace(/[／⁄|]/g, '/');
+
+        if (!value) return null;
+
+        const pair = parseFractionPairTotal(value);
+
+        if (pair != null) return pair;
+
+        return loneFractionInteger(value);
+    }
+
+    function readPlanColumnsFromHeadRow(headRow) {
+        const cols = [];
+        const cells = tableRowCells(headRow);
+
+        for (let i = 0; i < cells.length; i++) {
+            const name = planNameFromHeaderCell(collectDeepText(cells[i]));
+
+            if (name) cols.push({ index: i, planName: name });
+        }
+
+        return cols;
+    }
+
+    function findFractionsBodyRow(table) {
+        const rows = tableBodyRows(table);
+
+        for (let i = 0; i < rows.length; i++) {
+            const cells = tableRowCells(rows[i]);
+            const first = cells[0] ? collectDeepText(cells[0]) : '';
+
+            if (isDeliveredTotalFractionsLabel(first) || isDeliveredTotalFractionsLabel(collectDeepText(rows[i]))) {
+                return rows[i];
+            }
+        }
+
+        return null;
+    }
+
+    function nearestOverviewTable(el) {
+        let node = el;
+
+        for (let i = 0; i < 24 && node; i++) {
+            if ((node.tagName || '').toLowerCase() === 'table') return node;
+
+            if (node.shadowRoot) {
+                const kids = node.shadowRoot.querySelectorAll
+                    ? node.shadowRoot.querySelectorAll('table')
+                    : [];
+                const tables = kids && kids.length ? Array.from(kids) : [];
+
+                if (tables.length === 1) return tables[0];
+
+                if (!tables.length) {
+                    const nested = [];
+
+                    walkComposedTree(node.shadowRoot, child => {
+                        if ((child.tagName || '').toLowerCase() === 'table') nested.push(child);
+                    });
+
+                    if (nested.length === 1) return nested[0];
+                } else if (tables.length === 1) {
+                    return tables[0];
+                }
+            }
+
+            node = composedParent(node);
+        }
+
+        return null;
+    }
+
+    function findSmallestFractionsLabelElements(root) {
+        const hits = [];
+
+        walkComposedTree(root, el => {
+            if (isInNavSidebar(el) || isInHotkeyPanel(el)) return;
+            if (isFractionsLabelElement(el)) hits.push(el);
+        });
+
+        return hits;
+    }
+
+    function parseCourseHeadingText(text) {
+        const value = normalizeText(text).replace(/[：∶﹕]/g, ':');
+
+        if (!value || !/^course:/i.test(value)) return '';
+
+        return parseCourseLabel(value);
+    }
+
+    function nearestMainCourseHeading(el, ranks) {
+        if (!el) return '';
+
+        const rankMap = ranks || new Map();
+        const elRank = rankMap.has(el) ? rankMap.get(el) : null;
+        let best = '';
+        let bestRank = -1;
+        let node = composedParent(el);
+        let steps = 0;
+
+        while (node && steps < 30) {
+            const text = collectDeepText(node);
+            const course = parseCourseHeadingText(text);
+
+            if (course && !isInNavSidebar(node) && !isInHotkeyPanel(node) && text.length <= 200) {
+                const kids = Array.from(node.children || []);
+                const childHas = kids.some(child => parseCourseHeadingText(collectDeepText(child)));
+
+                if (!childHas || kids.length <= 2) return course;
+            }
+
+            node = composedParent(node);
+            steps++;
+        }
+
+        const root = (el.ownerDocument || (typeof el.getRootNode === 'function' ? el.getRootNode() : null));
+        const searchRoot = root && root.host ? (root.host.ownerDocument || root) : (el.ownerDocument || root);
+
+        if (searchRoot) {
+            walkComposedTree(searchRoot.nodeType ? searchRoot : searchRoot, item => {
+                if (isInNavSidebar(item) || isInHotkeyPanel(item)) return;
+
+                const course = parseCourseHeadingText(collectDeepText(item));
+
+                if (!course) return;
+
+                const itemRank = rankMap.has(item) ? rankMap.get(item) : null;
+
+                if (elRank != null && itemRank != null && itemRank < elRank && itemRank >= bestRank) {
+                    best = course;
+                    bestRank = itemRank;
+                }
+            });
+        }
+
+        if (best) return best;
+
+        // Walk preceding composed siblings via ancestors if ranks were missing.
+        node = el;
+        steps = 0;
+
+        while (node && steps < 40) {
+            let sib = node.previousElementSibling;
+
+            while (sib) {
+                if (!isInNavSidebar(sib) && !isInHotkeyPanel(sib)) {
+                    let found = '';
+
+                    walkComposedTree(sib, item => {
+                        if (found || isInNavSidebar(item)) return;
+
+                        const course = parseCourseHeadingText(collectDeepText(item));
+
+                        if (course) found = course;
+                    });
+
+                    const own = parseCourseHeadingText(collectDeepText(sib));
+
+                    if (own) return own;
+                    if (found) return found;
+                }
+
+                sib = sib.previousElementSibling;
+            }
+
+            node = composedParent(node);
+            steps++;
+        }
+
+        return best;
+    }
+
+    function readPlanRowsFromOverviewTable(table, courseName, order) {
+        const headRow = tableHeadRow(table);
+        const cols = readPlanColumnsFromHeadRow(headRow);
+        const fracRow = findFractionsBodyRow(table);
+        const rows = [];
+
+        if (!fracRow || !cols.length) return rows;
+
+        const cells = tableRowCells(fracRow);
+
+        cols.forEach((col, offset) => {
+            const cell = cells[col.index];
+            const total = cell ? parsePlanCellFractionTotal(collectDeepText(cell)) : null;
+
+            rows.push({
+                courseName: courseName || '',
+                planName: col.planName,
+                totalFractions: total,
+                table,
+                order: (order == null ? 0 : order) + offset
+            });
+        });
+
+        return rows;
+    }
+
+    function findMainCourseHeadingRecords(root, ranks, startOrder) {
+        const records = [];
+        const seen = {};
+        let order = startOrder || 0;
+
+        walkComposedTree(root, el => {
+            if (isInNavSidebar(el) || isInHotkeyPanel(el)) return;
+
+            const text = collectDeepText(el);
+
+            if (!text || text.length > 160) return;
+
+            const course = parseCourseHeadingText(text);
+
+            if (!course) return;
+
+            const kids = Array.from(el.children || []);
+
+            if (kids.some(child => parseCourseHeadingText(collectDeepText(child)) && collectDeepText(child).length < text.length)) {
+                return;
+            }
+
+            const key = courseIdToken(course) || looseLabelKey(course);
+
+            if (!key || seen[key]) return;
+
+            seen[key] = true;
+            records.push({
+                courseName: course,
+                planName: '',
+                totalFractions: null,
+                headingOnly: true,
+                order: order++
+            });
+        });
+
+        return records;
+    }
+
+    function mergeOverviewPlanRows() {
+        const merged = [];
+        const lists = Array.from(arguments);
+        const seen = new Set();
+        const tableIds = typeof WeakMap === 'function' ? new WeakMap() : null;
+        let tableSeq = 0;
+
+        function tableKey(table) {
+            if (!table) return '';
+
+            if (tableIds) {
+                if (!tableIds.has(table)) tableIds.set(table, ++tableSeq);
+
+                return String(tableIds.get(table));
+            }
+
+            return String(++tableSeq);
+        }
+
+        function keyFor(row) {
+            if (row && row.table && row.planName) {
+                return 't:' + tableKey(row.table) + ':' + looseLabelKey(row.planName);
+            }
+
+            const course = courseIdToken(row && row.courseName) || looseLabelKey(row && row.courseName);
+            const plan = looseLabelKey(row && row.planName);
+
+            return 'c:' + course + ':' + plan + ':' + String(row && row.totalFractions);
+        }
+
+        function score(row) {
+            let n = 0;
+
+            if (row && row.totalFractions != null) n += 4;
+            if (row && row.planName) n += 2;
+            if (row && row.courseName && !row.headingOnly) n += 1;
+            if (row && row.table) n += 1;
+
+            return n;
+        }
+
+        lists.forEach(list => {
+            (list || []).forEach(row => {
+                if (!row) return;
+
+                const key = keyFor(row);
+                const existing = seen.has(key) ? merged.find(item => keyFor(item) === key) : null;
+
+                if (existing) {
+                    if (score(row) > score(existing)) {
+                        merged[merged.indexOf(existing)] = row;
+                    }
+                    return;
+                }
+
+                // Prefer a full table row over a heading-only row for the same course
+                // when the table row has no plan name collision.
+                if (row.headingOnly) {
+                    const id = courseIdToken(row.courseName) || looseLabelKey(row.courseName);
+                    const hasBetter = merged.some(item => (
+                        !item.headingOnly
+                        && (courseIdToken(item.courseName) || looseLabelKey(item.courseName)) === id
+                    ));
+
+                    if (hasBetter) return;
+                } else {
+                    const id = courseIdToken(row.courseName) || looseLabelKey(row.courseName);
+
+                    for (let i = merged.length - 1; i >= 0; i--) {
+                        const item = merged[i];
+                        const other = courseIdToken(item.courseName) || looseLabelKey(item.courseName);
+
+                        if (item.headingOnly && id && other === id) {
+                            merged.splice(i, 1);
+                            seen.delete(keyFor(item));
+                        }
+                    }
+                }
+
+                seen.add(key);
+                merged.push(row);
+            });
+        });
+
+        return merged;
     }
 
     function scanTemplateMatchPage(selects) {
@@ -2188,8 +2631,55 @@
         return { courseName, planName, totalFractions };
     }
 
-    function findOverviewPlanRecords() {
-        const rawBlocks = [];
+    function collectOverviewRowsFromRoot(root) {
+        const ranks = composedElementOrderMap(root);
+        const fromTables = [];
+        const seenTables = new Set();
+        let order = 0;
+
+        findSmallestFractionsLabelElements(root).forEach(label => {
+            const table = nearestOverviewTable(label);
+            const courseName = nearestMainCourseHeading(label, ranks)
+                || nearestMainCourseHeading(table, ranks)
+                || '';
+
+            if (table) {
+                if (seenTables.has(table)) return;
+
+                seenTables.add(table);
+
+                const extracted = readPlanRowsFromOverviewTable(table, courseName, order);
+
+                if (extracted.length) {
+                    extracted.forEach(row => fromTables.push(row));
+                    order += extracted.length;
+                    return;
+                }
+            }
+
+            const record = readOverviewRecordFromFractionsLabel(label);
+
+            if (record && (record.totalFractions != null || record.planName)) {
+                fromTables.push({
+                    courseName: record.courseName || courseName,
+                    planName: record.planName || '',
+                    totalFractions: record.totalFractions,
+                    table: table || null,
+                    order: order++
+                });
+            }
+        });
+
+        const headings = findMainCourseHeadingRecords(root, ranks, order);
+
+        return mergeOverviewPlanRows(fromTables, headings);
+    }
+
+    // 3.46-style fallback: every smallest fractions label that yields
+    // a parseable total, including nested wrappers. Later merged and
+    // deduped against table-based rows.
+    function findOverviewPlanRecordsLegacy() {
+        const records = [];
         let order = 0;
 
         overviewDocuments().forEach(doc => {
@@ -2198,76 +2688,40 @@
                     return;
                 }
 
-                if (!isFractionsLabelElement(el)) return;
+                const text = collectDeepText(el);
 
-                const record = readOverviewRecordFromFractionsLabel(el);
-                const cells = [];
+                if (!isDeliveredTotalFractionsLabel(text)) return;
 
-                collectOverviewCells(el, cells);
+                const kids = Array.from(el.children || []);
 
-                let container = el;
-                const ancestorIds = [];
-
-                for (let i = 0; i < 12 && container && container.parentElement; i++) {
-                    const parent = container.parentElement;
-
-                    if (!parent || countInnermostFractionsLabels(parent) > 1) break;
-                    if (isInPatientsSidebar(parent) || isInHotkeyPanel(parent)) break;
-
-                    ancestorIds.push(parent);
-                    container = parent;
-
-                    const parentCells = [];
-
-                    collectOverviewCells(container, parentCells);
-
-                    if (readAllPlanNamesFromCells(parentCells).length || readTotalFractionsFromCells(parentCells) != null) {
-                        cells.length = 0;
-                        parentCells.forEach(cell => cells.push(cell));
-                        break;
-                    }
+                if (kids.some(child => isDeliveredTotalFractionsLabel(collectDeepText(child)))) {
+                    return;
                 }
 
-                rawBlocks.push({
-                    id: container || el,
-                    container: container || el,
-                    ancestorIds,
-                    courseName: (record && record.courseName) || '',
-                    planName: (record && record.planName) || readPlanNameFromCells(cells),
-                    totalFractions: record && record.totalFractions != null
-                        ? record.totalFractions
-                        : readTotalFractionsFromCells(cells),
-                    cells: cells.slice(),
-                    order: order++
-                });
+                const record = readOverviewRecordFromFractionsLabel(el);
+
+                if (record && record.totalFractions != null) {
+                    records.push({
+                        courseName: record.courseName || '',
+                        planName: record.planName || '',
+                        totalFractions: record.totalFractions,
+                        order: order++
+                    });
+                }
             });
         });
 
-        const rows = [];
+        return records;
+    }
 
-        dedupeOverviewBlocks(rawBlocks).forEach(block => {
-            const extracted = extractPlanRowsFromCells(block.cells || [], block.courseName);
+    function findOverviewPlanRecords() {
+        const collected = [];
 
-            if (extracted.length) {
-                extracted.forEach((row, rowIndex) => {
-                    if (!row.courseName) row.courseName = block.courseName || '';
-                    row.order = (block.order != null ? block.order : rows.length) + rowIndex;
-                    rows.push(row);
-                });
-                return;
-            }
-
-            if (block.totalFractions != null) {
-                rows.push({
-                    courseName: block.courseName || '',
-                    planName: block.planName || '',
-                    totalFractions: block.totalFractions,
-                    order: block.order != null ? block.order : rows.length
-                });
-            }
+        overviewDocuments().forEach(doc => {
+            collectOverviewRowsFromRoot(doc).forEach(row => collected.push(row));
         });
 
-        return rows;
+        return mergeOverviewPlanRows(collected, findOverviewPlanRecordsLegacy());
     }
 
     function describeTemplateSelect(select, scan) {
@@ -2302,11 +2756,10 @@
         }
 
         const plans = selects.map(select => describeTemplateSelect(select, scan));
-        const overviews = scan.overviews.length
-            ? scan.overviews
-            : findOverviewPlanRecords();
+        const overviews = mergeOverviewPlanRows(scan.overviews, findOverviewPlanRecords());
+        const tableCount = new Set(overviews.map(row => row && row.table).filter(Boolean)).size;
         const match = resolvePlanTemplateMatch(plans, overviews, {
-            blocks: scan.counts.blocks != null ? scan.counts.blocks : 0
+            blocks: tableCount || (scan.counts.blocks != null ? scan.counts.blocks : 0)
         });
         const unsel = plans.filter(plan => plan && !plan.filled && plan.unselected).length;
         const namedPlans = plans.filter(plan => plan && plan.planName).length;
@@ -2314,7 +2767,7 @@
         const counts = Object.assign({}, match.stats, {
             sel: selects.length,
             unsel,
-            blocks: scan.counts.blocks != null ? scan.counts.blocks : overviews.length,
+            blocks: tableCount || (scan.counts.blocks != null ? scan.counts.blocks : 0),
             rows: overviews.length,
             courses: Math.max(Number(scan.counts.courses) || 0, namedCourses, Number(match.stats.courses) || 0),
             planLabels: Math.max(Number(scan.counts.planLabels) || 0, namedPlans),
@@ -2435,6 +2888,28 @@
             node.tagName &&
             node.tagName.toLowerCase() === 'patients-sidebar'
         );
+    }
+
+    function isInNavSidebar(el) {
+        return ancestorChain(el).some(node => {
+            const tag = node.tagName ? node.tagName.toLowerCase() : '';
+
+            return tag === 'patients-sidebar' || tag === 'sections-sidebar';
+        });
+    }
+
+    function composedRootHost(node) {
+        if (!node || typeof node.getRootNode !== 'function') return null;
+
+        const root = node.getRootNode();
+
+        return root && root.host ? root.host : null;
+    }
+
+    function composedParent(node) {
+        if (!node) return null;
+
+        return node.parentElement || composedRootHost(node) || null;
     }
 
     function isInHotkeyPanel(el) {
@@ -2914,13 +3389,26 @@
     // example 2 / 3), and M may sit in a child span, so the Plan
     // cell must be read as a whole. The plan M is used when present;
     // otherwise the Rx total is used.
+    function fractionsLabelNorm(text) {
+        return normalizeText(text)
+            .toLowerCase()
+            .replace(/[／⁄|]/g, '/')
+            .replace(/\s*\/\s*/g, '/');
+    }
+
     function isDeliveredTotalFractionsLabel(text) {
         const value = normalizeText(text)
             .toLowerCase()
-            .replace(/[／⁄|]/g, '/');
+            .replace(/[／⁄|]/g, '/')
+            .replace(/\s*\/\s*/g, '/');
 
-        return /delivered\s*\/\s*total\s+fractions?/.test(value)
-            || /delivered\s*\/?\s*total\s*\/?\s*fractions?/.test(value);
+        if (!value) return false;
+
+        return value === 'delivered/total fractions'
+            || value === 'delivered/total fraction'
+            || value.startsWith('delivered/total fractions')
+            || value.startsWith('delivered/total fraction/')
+            || value.startsWith('delivered/total fraction ');
     }
 
     function isOverviewFieldLabel(text) {
@@ -3102,12 +3590,23 @@
                 return;
             }
 
+            // ShadowRoot and document fragments are nodeType 11.
+            if (node.nodeType === 11) {
+                for (const child of node.childNodes || []) visit(child);
+                return;
+            }
+
             if (node.nodeType !== 1) return;
             if (node.id === 'chartcheck-panel') return;
 
             const tag = (node.tagName || '').toLowerCase();
 
             if (tag === 'script' || tag === 'style' || tag === 'noscript') {
+                return;
+            }
+
+            if (tag === 'br') {
+                parts.push(' ');
                 return;
             }
 
