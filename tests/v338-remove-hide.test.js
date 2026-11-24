@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.45', /@version\s+3\.45\b/.test(src));
-ok('no leftover 3.44', !/\b3\.44\b/.test(src));
+ok('@version 3.46', /@version\s+3\.46\b/.test(src));
+ok('no leftover 3.45', !/\b3\.45\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 const buttonOrder = src.slice(
