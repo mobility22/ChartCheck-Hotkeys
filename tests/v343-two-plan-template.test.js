@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.44', /@version\s+3\.44\b/.test(src));
-ok('no leftover 3.43', !/\b3\.43\b/.test(src));
+ok('@version 3.45', /@version\s+3\.45\b/.test(src));
+ok('no leftover 3.44', !/\b3\.44\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('SBRT gray-out still uses the page-wide first fraction read', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTotalFractions\(\);/.test(src));

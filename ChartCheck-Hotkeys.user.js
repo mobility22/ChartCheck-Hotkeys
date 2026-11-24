@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.44
+// @version      3.45
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -730,10 +730,7 @@
     }
 
     function planNamesMatch(left, right) {
-        const a = normalizePlanName(left);
-        const b = normalizePlanName(right);
-
-        return !!a && !!b && a === b;
+        return labelsMatchLoose(left, right);
     }
 
     function normalizeCourseKey(name) {
@@ -745,15 +742,95 @@
     }
 
     function courseKeysMatch(left, right) {
-        const a = normalizeCourseKey(left);
-        const b = normalizeCourseKey(right);
+        return labelsMatchLoose(left, right);
+    }
+
+    function looseLabelKey(name) {
+        let value = normalizeText(name);
+
+        if (!value) return '';
+
+        value = value.replace(/^course:\s*/i, '');
+        value = value.replace(/^plan\s*name\s*[:.\-]?\s*/i, '');
+        value = value.replace(/^plan:\s*/i, '');
+
+        return value.replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    function labelsMatchLoose(left, right) {
+        const a = looseLabelKey(left);
+        const b = looseLabelKey(right);
 
         if (!a || !b) return false;
         if (a === b) return true;
 
-        const compact = value => value.replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ');
+        const compact = value => value.replace(/\s*-\s*/g, '-').replace(/\s+/g, '');
+        const ca = compact(a);
+        const cb = compact(b);
 
-        return compact(a) === compact(b);
+        if (ca && cb && ca === cb) return true;
+
+        if (a.length >= 2 && b.length >= 2) {
+            if (a.startsWith(b) || b.startsWith(a)) return true;
+        }
+
+        if (a.length >= 3 && b.length >= 3) {
+            if (a.includes(b) || b.includes(a)) return true;
+        }
+
+        if (ca.length >= 3 && cb.length >= 3) {
+            if (ca.startsWith(cb) || cb.startsWith(ca) || ca.includes(cb) || cb.includes(ca)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function joinSplitPrefixedLabel(prefixText, followingTexts) {
+        const prefix = normalizeText(prefixText);
+        const rest = normalizeText((followingTexts || []).join(' '));
+
+        if (!rest) return '';
+
+        if (/^course:\s*$/i.test(prefix) || /^plan:\s*$/i.test(prefix)) {
+            return prefix.replace(/:\s*$/, ':') + ' ' + rest;
+        }
+
+        return '';
+    }
+
+    function nearestPrecedingLabel(itemOrder, labels) {
+        let found = '';
+
+        (labels || []).forEach(label => {
+            if (!label || label.order == null) return;
+            if (label.order < itemOrder && label.text) {
+                found = label.text;
+            }
+        });
+
+        return found;
+    }
+
+    function formatReviewReason(reason, counts) {
+        const detail = reason == null ? '' : String(reason).trim();
+
+        if (!detail) return '';
+
+        const data = counts || {};
+        const sel = Number(data.sel);
+        const blocks = Number(data.blocks);
+        const courses = Number(data.courses);
+
+        if (![sel, blocks, courses].every(Number.isFinite)) {
+            return detail;
+        }
+
+        return detail
+            + ' sel=' + sel
+            + ' blocks=' + blocks
+            + ' courses=' + courses;
     }
 
     function isPlanNameLabel(text) {
@@ -879,19 +956,15 @@
                 if (hits.length === 1) return claim(hits[0]);
             }
 
-            const byOrder = tables[index] || null;
-
-            if (byOrder && !used.has(index)) {
-                const orderCourse = byOrder.courseName;
-                const orderName = byOrder.planName;
-                const courseOk = !courseName || !normalizeCourseKey(orderCourse) || courseKeysMatch(orderCourse, courseName);
-                const nameOk = !planName || !normalizePlanName(orderName) || planNamesMatch(orderName, planName);
-
-                if (courseOk && nameOk) return claim(byOrder);
-            }
-
             return null;
         }
+
+        // Selected plans also claim a block when possible, so a later
+        // unselected plan is not given a table that already belongs
+        // to a filled dropdown.
+        list.forEach((plan, index) => {
+            if (plan && plan.filled) matchTable(plan, index);
+        });
 
         const result = list.map((plan, index) => {
             if (plan && plan.filled) {
@@ -933,6 +1006,32 @@
             };
         });
 
+        // When the number of template dropdowns equals the number of
+        // overview blocks, map them by document order, including
+        // filled dropdowns which account for their block.
+        if (list.length === tables.length) {
+            result.forEach((state, index) => {
+                if (state && state.filled) {
+                    used.add(index);
+                    return;
+                }
+
+                if (!state || state.unselected === false || state.tableFound) {
+                    return;
+                }
+
+                if (tables[index] && !used.has(index)) {
+                    used.add(index);
+                    result[index] = {
+                        filled: false,
+                        unselected: true,
+                        tableFound: true,
+                        totalFractions: tables[index].totalFractions
+                    };
+                }
+            });
+        }
+
         const unmatched = [];
 
         result.forEach((state, index) => {
@@ -948,7 +1047,6 @@
         });
 
         const unselectedCount = list.filter(plan => plan && !plan.filled && plan.unselected !== false).length;
-
         const filledCount = list.filter(plan => plan && plan.filled).length;
 
         if (unmatched.length === 1 && unused.length === 1 && used.size > 0) {
@@ -1198,6 +1296,196 @@
         return names;
     }
 
+    function followingSiblingTexts(el, limit) {
+        const texts = [];
+        let sib = el ? el.nextSibling : null;
+        const max = limit == null ? 4 : limit;
+
+        while (sib && texts.length < max) {
+            if (sib.nodeType === 3) {
+                const text = normalizeText(sib.nodeValue);
+
+                if (text) texts.push(text);
+            } else if (sib.nodeType === 1) {
+                const text = collectDeepText(sib);
+
+                if (text && !isDeliveredTotalFractionsLabel(text)) {
+                    const plan = parsePlanTreeLabel(text);
+                    const course = parseCourseLabel(text);
+
+                    if (plan || course) break;
+
+                    texts.push(text);
+                    break;
+                }
+            }
+
+            sib = sib.nextSibling;
+        }
+
+        return texts;
+    }
+
+    function readPrefixedLabelAt(el) {
+        if (!el || !el.tagName) return { course: '', plan: '' };
+
+        const text = collectDeepText(el);
+        const value = normalizeText(text);
+
+        if (!value || value.length > 240) return { course: '', plan: '' };
+
+        if (/^course:\s*$/i.test(value) || /^plan:\s*$/i.test(value)) {
+            const joined = joinSplitPrefixedLabel(value, followingSiblingTexts(el));
+
+            return {
+                course: /^course:/i.test(value) ? (parseCourseLabel(joined) || looseLabelKey(joined)) : '',
+                plan: /^plan:/i.test(value) ? (parsePlanTreeLabel(joined) || looseLabelKey(joined)) : ''
+            };
+        }
+
+        if (!isInnermostDeepText(el, text) && text !== value) {
+            return { course: '', plan: '' };
+        }
+
+        return {
+            course: parseCourseLabel(text),
+            plan: parsePlanTreeLabel(text)
+        };
+    }
+
+    function walkElementsInOrder(root, visit, seen) {
+        const visited = seen || new Set();
+
+        if (!root || visited.has(root)) return;
+
+        visited.add(root);
+
+        function walk(node) {
+            if (!node || node.nodeType !== 1) return;
+            if (node.id === 'chartcheck-panel') return;
+            if (isInPatientsSidebar(node) || isInHotkeyPanel(node)) return;
+
+            visit(node);
+
+            if (node.shadowRoot) walkElementsInOrder(node.shadowRoot, visit, visited);
+
+            const tag = (node.tagName || '').toLowerCase();
+
+            if (tag === 'iframe') {
+                try {
+                    if (node.contentDocument) {
+                        walkElementsInOrder(node.contentDocument, visit, visited);
+                    }
+                } catch (err) {}
+                return;
+            }
+
+            const children = node.children || [];
+
+            for (let i = 0; i < children.length; i++) {
+                walk(children[i]);
+            }
+        }
+
+        if (root.nodeType === 9) walk(root.documentElement);
+        else walk(root);
+    }
+
+    function isFractionsLabelElement(el) {
+        if (!el || !el.tagName) return false;
+
+        const text = collectDeepText(el);
+
+        if (!isDeliveredTotalFractionsLabel(text)) return false;
+        if (!isInnermostDeepText(el, text) && text !== 'Delivered / Total Fractions') {
+            for (const child of el.children || []) {
+                if (isDeliveredTotalFractionsLabel(collectDeepText(child))) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    function scanTemplateMatchPage(selects) {
+        const events = [];
+        let order = 0;
+        const selectSet = new Set(selects || []);
+
+        overviewDocuments().forEach(doc => {
+            walkElementsInOrder(doc, el => {
+                const label = readPrefixedLabelAt(el);
+
+                if (label.course) {
+                    events.push({ order: order++, kind: 'course', text: label.course, el });
+                }
+
+                if (label.plan) {
+                    events.push({ order: order++, kind: 'plan', text: label.plan, el });
+                }
+
+                if (selectSet.has(el)) {
+                    events.push({ order: order++, kind: 'select', el });
+                }
+
+                if (isFractionsLabelElement(el)) {
+                    events.push({ order: order++, kind: 'fractions', el });
+                }
+            });
+        });
+
+        const courseEvents = events.filter(item => item.kind === 'course');
+        const planEvents = events.filter(item => item.kind === 'plan');
+        const courseBySelect = new Map();
+        const planBySelect = new Map();
+
+        events.forEach(item => {
+            if (item.kind !== 'select') return;
+
+            const course = nearestPrecedingLabel(item.order, courseEvents);
+            const plan = nearestPrecedingLabel(item.order, planEvents);
+
+            if (course) courseBySelect.set(item.el, course);
+            if (plan) planBySelect.set(item.el, plan);
+        });
+
+        const overviews = [];
+
+        events.forEach(item => {
+            if (item.kind !== 'fractions') return;
+
+            const record = readOverviewRecordFromFractionsLabel(item.el);
+            const courseName = nearestPrecedingLabel(item.order, courseEvents)
+                || (record && record.courseName)
+                || '';
+            const planName = record && record.planName ? record.planName : '';
+            const totalFractions = record && record.totalFractions != null
+                ? record.totalFractions
+                : null;
+
+            if (totalFractions != null) {
+                overviews.push({
+                    courseName,
+                    planName,
+                    totalFractions
+                });
+            }
+        });
+
+        return {
+            events,
+            courseBySelect,
+            planBySelect,
+            overviews,
+            counts: {
+                sel: (selects || []).length,
+                blocks: overviews.length,
+                courses: courseEvents.length
+            }
+        };
+    }
+
     function findPlanNameNearSelect(select) {
         let node = select;
 
@@ -1375,17 +1663,20 @@
         return records;
     }
 
-    function describeTemplateSelect(select) {
+    function describeTemplateSelect(select, scan) {
         const text = selectedTemplateText(select);
         const filled = isValidSiteTemplate(text);
         const unselected = isTemplateSelectUnselected(select);
+        const fromScan = scan || {};
 
         return {
             text,
             filled,
             unselected,
-            planName: findPlanNameNearSelect(select),
-            courseName: findCourseLabelNearSelect(select),
+            planName: (fromScan.planBySelect && fromScan.planBySelect.get(select))
+                || findPlanNameNearSelect(select),
+            courseName: (fromScan.courseBySelect && fromScan.courseBySelect.get(select))
+                || findCourseLabelNearSelect(select),
             optionTexts: Array.from(select.options || []).map(option => (
                 option && option.text ? String(option.text).trim() : ''
             ))
@@ -1394,14 +1685,23 @@
 
     async function ensureReviewTemplates() {
         const selects = getTemplateSelects();
+        const scan = scanTemplateMatchPage(selects);
 
         if (selects.length === 0 && checksNeedTemplatePrompt()) {
-            setReviewNote('Template needed', 'prompt?');
+            setReviewNote('Template needed', formatReviewReason('prompt?', scan.counts));
             return 'stop';
         }
 
-        const plans = selects.map(describeTemplateSelect);
-        const contexts = resolvePlanTemplateContexts(plans, findOverviewPlanRecords());
+        const plans = selects.map(select => describeTemplateSelect(select, scan));
+        const overviews = scan.overviews.length
+            ? scan.overviews
+            : findOverviewPlanRecords();
+        const counts = {
+            sel: selects.length,
+            blocks: overviews.length,
+            courses: scan.counts.courses
+        };
+        const contexts = resolvePlanTemplateContexts(plans, overviews);
         const decision = templateReviewDecision(
             resolveReviewSite(detectPatientSite(), plans),
             contexts
@@ -1410,7 +1710,7 @@
         if (decision.action === 'ok') return 'ok';
 
         if (decision.action === 'stop') {
-            setReviewNote(decision.message, decision.reason);
+            setReviewNote(decision.message, formatReviewReason(decision.reason, counts));
             return 'stop';
         }
 
@@ -1421,7 +1721,7 @@
         const applied = await applyTemplateAndWait(decision.templateName, targets);
 
         if (!applied) {
-            setReviewNote('Template needed', 'checks?');
+            setReviewNote('Template needed', formatReviewReason('checks?', counts));
             return 'stop';
         }
 
