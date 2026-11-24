@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.46
+// @version      3.47
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -84,6 +84,7 @@
     let statusEl;
     let helpList;
     let siteFrame;
+    let domCopyBtn;
     let panelHidden = false;
     let trackedIdentity = '';
     let settledObservation = null;
@@ -497,12 +498,131 @@
         'RCO_SBRT'
     ];
 
+    function optionLooksLikeCheckTemplate(text) {
+        return /^(ROS_|RCO_|OAK_)/i.test(normalizeText(text));
+    }
+
+    function selectLooksLikeDateFilter(select) {
+        const texts = Array.from((select && select.options) || []).map(option => (
+            normalizeText(option && option.text).toLowerCase()
+        ));
+
+        return texts.some(text => (
+            /\blast\s+\d+\s+days?\b/.test(text)
+            || /\b(today|yesterday|this\s+week|last\s+week)\b/.test(text)
+            || /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(text)
+        ));
+    }
+
+    function isCheckTemplateLabelText(text) {
+        const value = normalizeText(text).replace(/[:.\-]+$/g, '').toLowerCase();
+
+        return value === 'check template' || value === 'check templates';
+    }
+
+    function isLikelyVisibleSelect(select) {
+        if (!select || !select.tagName) return true;
+
+        try {
+            if (select.hidden) return false;
+
+            if (
+                select.offsetWidth === 0
+                && select.offsetHeight === 0
+                && typeof select.getBoundingClientRect === 'function'
+            ) {
+                const rect = select.getBoundingClientRect();
+
+                if (rect && rect.width === 0 && rect.height === 0) {
+                    return false;
+                }
+            }
+
+            if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+                const style = window.getComputedStyle(select);
+
+                if (style && (style.display === 'none' || style.visibility === 'hidden')) {
+                    return false;
+                }
+            }
+        } catch (err) {}
+
+        return true;
+    }
+
+    function hasPrecedingCheckTemplateLabel(select) {
+        if (!select) return false;
+
+        let node = select;
+
+        for (let i = 0; i < 10 && node; i++) {
+            let sib = node.previousElementSibling;
+            let steps = 0;
+
+            while (sib && steps < 8) {
+                if (isCheckTemplateLabelText(collectDeepText(sib))) {
+                    return true;
+                }
+
+                sib = sib.previousElementSibling;
+                steps++;
+            }
+
+            const parent = node.parentElement
+                || (typeof node.getRootNode === 'function' && node.getRootNode() && node.getRootNode().host)
+                || null;
+
+            if (
+                parent
+                && isCheckTemplateLabelText(collectDeepText(parent))
+                && (parent.children || []).length < 6
+            ) {
+                return true;
+            }
+
+            node = parent;
+        }
+
+        return false;
+    }
+
+    function filterCheckTemplateSelects(selects) {
+        const unique = [];
+        const seen = new Set();
+
+        (selects || []).forEach(select => {
+            if (!select || seen.has(select) || isInHotkeyPanel(select)) return;
+            if (selectLooksLikeDateFilter(select)) return;
+
+            const options = Array.from(select.options || []);
+
+            if (!options.some(option => optionLooksLikeCheckTemplate(option && option.text))) {
+                return;
+            }
+
+            seen.add(select);
+            unique.push(select);
+        });
+
+        const labeled = unique.filter(hasPrecedingCheckTemplateLabel);
+        const visibleLabeled = labeled.filter(isLikelyVisibleSelect);
+
+        if (visibleLabeled.length) return visibleLabeled;
+        if (labeled.length) return labeled;
+
+        const visible = unique.filter(isLikelyVisibleSelect);
+
+        return visible.length ? visible : unique;
+    }
+
     function getTemplateSelects() {
-        return findSelects().filter(select =>
-            Array.from(select.options).some(option =>
-                VALID_CHECK_TEMPLATES.includes(option.text)
-            )
-        );
+        const found = [];
+
+        overviewDocuments().forEach(doc => {
+            found.push.apply(found, findSelects(doc));
+        });
+
+        return filterCheckTemplateSelects(found);
     }
 
     function clickButtonByText(text) {
@@ -761,8 +881,23 @@
         return value.replace(/\s+/g, ' ').trim().toLowerCase();
     }
 
+    function courseIdToken(name) {
+        const value = looseLabelKey(name);
+
+        if (!value) return '';
+
+        const match = /^c\s*(\d+)\b/i.exec(value);
+
+        return match ? 'c' + match[1] : '';
+    }
+
     function courseKeysMatch(left, right) {
-        return labelsMatchLoose(left, right);
+        if (labelsMatchLoose(left, right)) return true;
+
+        const a = courseIdToken(left);
+        const b = courseIdToken(right);
+
+        return !!(a && b && a === b);
     }
 
     function looseLabelKey(name) {
@@ -857,7 +992,8 @@
             + ' rows=' + countValue('rows')
             + ' courses=' + countValue('courses')
             + ' planLabels=' + countValue('planLabels')
-            + ' matched=' + countValue('matched');
+            + ' matched=' + countValue('matched')
+            + ' near=' + countValue('near');
 
         if (data.fail) {
             text += ' fail=' + String(data.fail).trim();
@@ -981,20 +1117,30 @@
                 row.push(next);
             }
 
-            const fromPlan = parseFractionPairTotal(row.join(' '));
-
-            if (fromPlan != null) {
-                totals.push(fromPlan);
-                continue;
-            }
+            const pairs = [];
+            const lones = [];
 
             row.forEach(cell => {
                 const pair = parseFractionPairTotal(cell);
                 const lone = loneFractionInteger(cell);
 
-                if (pair != null) totals.push(pair);
-                else if (lone != null) totals.push(lone);
+                if (pair != null) pairs.push(pair);
+                else if (lone != null) lones.push(lone);
             });
+
+            if (pairs.length) {
+                pairs.forEach(value => totals.push(value));
+                continue;
+            }
+
+            const joined = parseFractionPairTotal(row.join(' '));
+
+            if (joined != null) {
+                totals.push(joined);
+                continue;
+            }
+
+            lones.forEach(value => totals.push(value));
         }
 
         if (totals.length) return totals;
@@ -1131,11 +1277,12 @@
     // index when dropdowns and rows line up, then remaining
     // unselected dropdowns against leftover rows. Filled
     // dropdowns are left untouched but can claim a row.
-    function resolvePlanTemplateMatch(plans, overviews) {
+    function resolvePlanTemplateMatch(plans, overviews, options) {
         const list = Array.isArray(plans) ? plans : [];
         const rows = Array.isArray(overviews) ? overviews : [];
         const used = new Set();
         const failed = [];
+        const settings = options || {};
 
         function claim(row) {
             if (!row) return null;
@@ -1269,6 +1416,64 @@
             failed.push('index');
         }
 
+        let nearHits = 0;
+        const allowNear = Number(settings.blocks) === 0 && rows.length > 0;
+
+        function sourceOrder(item, index) {
+            const value = Number(item && item.order);
+
+            return Number.isFinite(value) ? value : index;
+        }
+
+        if (allowNear && leftoverPlans.length) {
+            const unusedIdx = [];
+
+            rows.forEach((row, index) => {
+                if (!used.has(index)) unusedIdx.push(index);
+            });
+
+            const pairs = [];
+
+            leftoverPlans.forEach(planIndex => {
+                unusedIdx.forEach(rowIndex => {
+                    pairs.push({
+                        planIndex,
+                        rowIndex,
+                        dist: Math.abs(
+                            sourceOrder(list[planIndex], planIndex)
+                            - sourceOrder(rows[rowIndex], rowIndex)
+                        )
+                    });
+                });
+            });
+
+            pairs.sort((left, right) => (
+                left.dist - right.dist
+                || left.planIndex - right.planIndex
+                || left.rowIndex - right.rowIndex
+            ));
+
+            const takenPlan = {};
+            const takenRow = {};
+
+            pairs.forEach(pair => {
+                if (takenPlan[pair.planIndex] || takenRow[pair.rowIndex]) return;
+
+                takenPlan[pair.planIndex] = true;
+                takenRow[pair.rowIndex] = true;
+                assigned[pair.planIndex] = claim(rows[pair.rowIndex]);
+                nearHits++;
+            });
+
+            for (let i = leftoverPlans.length - 1; i >= 0; i--) {
+                if (assigned[leftoverPlans[i]]) leftoverPlans.splice(i, 1);
+            }
+        }
+
+        if (allowNear && leftoverPlans.length) {
+            failed.push('near');
+        }
+
         const contexts = list.map((plan, index) => {
             if (plan && plan.filled) {
                 return {
@@ -1330,6 +1535,7 @@
                 courses: Object.keys(courseNames).length,
                 planLabels,
                 matched,
+                near: nearHits,
                 fail: leftoverPlans.length ? failed.join(',') : ''
             }
         };
@@ -1568,10 +1774,14 @@
                 const text = collectDeepText(sib);
 
                 if (text && !isDeliveredTotalFractionsLabel(text)) {
-                    const plan = parsePlanTreeLabel(text);
-                    const course = parseCourseLabel(text);
+                    const trimmed = normalizeText(text).replace(/[：∶﹕]/g, ':');
 
-                    if (plan || course) break;
+                    // A bare course/plan title (C1- Alpha, PlanA) should
+                    // be joined to a preceding Course:/Plan: prefix.
+                    // Only stop when the sibling starts a new prefix.
+                    if (/^(course(\s*id)?|plan)\s*[:.\-]/i.test(trimmed)) {
+                        break;
+                    }
 
                     texts.push(text);
                     break;
@@ -1649,7 +1859,7 @@
         function walk(node) {
             if (!node || node.nodeType !== 1) return;
             if (node.id === 'chartcheck-panel') return;
-            if (isInPatientsSidebar(node) || isInHotkeyPanel(node)) return;
+            if (isInHotkeyPanel(node)) return;
 
             visit(node);
 
@@ -1779,7 +1989,8 @@
                 totalFractions: record && record.totalFractions != null
                     ? record.totalFractions
                     : readTotalFractionsFromCells(cells),
-                cells
+                cells,
+                order: item.order
             });
         });
 
@@ -1790,8 +2001,9 @@
             const rows = extractPlanRowsFromCells(block.cells || [], block.courseName);
 
             if (rows.length) {
-                rows.forEach(row => {
+                rows.forEach((row, rowIndex) => {
                     if (!row.courseName) row.courseName = block.courseName || '';
+                    if (row.order == null) row.order = (block.order != null ? block.order : overviews.length) + rowIndex;
                     overviews.push(row);
                 });
                 return;
@@ -1801,15 +2013,23 @@
                 overviews.push({
                     courseName: block.courseName || '',
                     planName: block.planName,
-                    totalFractions: block.totalFractions
+                    totalFractions: block.totalFractions,
+                    order: block.order != null ? block.order : overviews.length
                 });
             }
+        });
+
+        const selectOrder = new Map();
+
+        events.forEach(item => {
+            if (item.kind === 'select') selectOrder.set(item.el, item.order);
         });
 
         return {
             events,
             courseBySelect,
             planBySelect,
+            selectOrder,
             overviews,
             uniqueBlocks,
             counts: {
@@ -1969,7 +2189,8 @@
     }
 
     function findOverviewPlanRecords() {
-        const records = [];
+        const rawBlocks = [];
+        let order = 0;
 
         overviewDocuments().forEach(doc => {
             walkDom(doc, el => {
@@ -1977,26 +2198,76 @@
                     return;
                 }
 
-                const text = collectDeepText(el);
+                if (!isFractionsLabelElement(el)) return;
 
-                if (!isDeliveredTotalFractionsLabel(text)) return;
-                if (!isInnermostDeepText(el, text) && text !== 'Delivered / Total Fractions') {
-                    for (const child of el.children) {
-                        if (isDeliveredTotalFractionsLabel(collectDeepText(child))) {
-                            return;
-                        }
+                const record = readOverviewRecordFromFractionsLabel(el);
+                const cells = [];
+
+                collectOverviewCells(el, cells);
+
+                let container = el;
+                const ancestorIds = [];
+
+                for (let i = 0; i < 12 && container && container.parentElement; i++) {
+                    const parent = container.parentElement;
+
+                    if (!parent || countInnermostFractionsLabels(parent) > 1) break;
+                    if (isInPatientsSidebar(parent) || isInHotkeyPanel(parent)) break;
+
+                    ancestorIds.push(parent);
+                    container = parent;
+
+                    const parentCells = [];
+
+                    collectOverviewCells(container, parentCells);
+
+                    if (readAllPlanNamesFromCells(parentCells).length || readTotalFractionsFromCells(parentCells) != null) {
+                        cells.length = 0;
+                        parentCells.forEach(cell => cells.push(cell));
+                        break;
                     }
                 }
 
-                const record = readOverviewRecordFromFractionsLabel(el);
-
-                if (record && record.totalFractions != null) {
-                    records.push(record);
-                }
+                rawBlocks.push({
+                    id: container || el,
+                    container: container || el,
+                    ancestorIds,
+                    courseName: (record && record.courseName) || '',
+                    planName: (record && record.planName) || readPlanNameFromCells(cells),
+                    totalFractions: record && record.totalFractions != null
+                        ? record.totalFractions
+                        : readTotalFractionsFromCells(cells),
+                    cells: cells.slice(),
+                    order: order++
+                });
             });
         });
 
-        return records;
+        const rows = [];
+
+        dedupeOverviewBlocks(rawBlocks).forEach(block => {
+            const extracted = extractPlanRowsFromCells(block.cells || [], block.courseName);
+
+            if (extracted.length) {
+                extracted.forEach((row, rowIndex) => {
+                    if (!row.courseName) row.courseName = block.courseName || '';
+                    row.order = (block.order != null ? block.order : rows.length) + rowIndex;
+                    rows.push(row);
+                });
+                return;
+            }
+
+            if (block.totalFractions != null) {
+                rows.push({
+                    courseName: block.courseName || '',
+                    planName: block.planName || '',
+                    totalFractions: block.totalFractions,
+                    order: block.order != null ? block.order : rows.length
+                });
+            }
+        });
+
+        return rows;
     }
 
     function describeTemplateSelect(select, scan) {
@@ -2015,7 +2286,9 @@
                 || findCourseLabelNearSelect(select),
             optionTexts: Array.from(select.options || []).map(option => (
                 option && option.text ? String(option.text).trim() : ''
-            ))
+            )),
+            order: (fromScan.selectOrder && fromScan.selectOrder.get(select))
+                || 0
         };
     }
 
@@ -2032,15 +2305,20 @@
         const overviews = scan.overviews.length
             ? scan.overviews
             : findOverviewPlanRecords();
-        const match = resolvePlanTemplateMatch(plans, overviews);
+        const match = resolvePlanTemplateMatch(plans, overviews, {
+            blocks: scan.counts.blocks != null ? scan.counts.blocks : 0
+        });
         const unsel = plans.filter(plan => plan && !plan.filled && plan.unselected).length;
+        const namedPlans = plans.filter(plan => plan && plan.planName).length;
+        const namedCourses = plans.filter(plan => plan && plan.courseName).length;
         const counts = Object.assign({}, match.stats, {
             sel: selects.length,
             unsel,
             blocks: scan.counts.blocks != null ? scan.counts.blocks : overviews.length,
             rows: overviews.length,
-            courses: scan.counts.courses,
-            planLabels: scan.counts.planLabels != null ? scan.counts.planLabels : 0
+            courses: Math.max(Number(scan.counts.courses) || 0, namedCourses, Number(match.stats.courses) || 0),
+            planLabels: Math.max(Number(scan.counts.planLabels) || 0, namedPlans),
+            near: match.stats.near || 0
         });
         const decision = templateReviewDecision(
             resolveReviewSite(detectPatientSite(), plans),
@@ -3594,12 +3872,437 @@
         });
     }
 
+
+    const SKELETON_WHITELIST_PHRASES = [
+        'check template',
+        'course id',
+        'plan name',
+        'rx name',
+        'plan overview',
+        'prescription / plan overview',
+        'rx/plan overview',
+        'delivered / total fractions',
+        'delivered / total dose',
+        'dose per fraction',
+        'method of delivery',
+        'approval status',
+        'initial treatment checks',
+        'ref points'
+    ];
+
+    const SKELETON_WHITELIST_TOKENS = {
+        course: 1, plan: 1, delivered: 1, total: 1, fractions: 1, fraction: 1,
+        template: 1, templates: 1, standard: 1, rx: 1, site: 1, status: 1, fx: 1,
+        check: 1, name: 1, id: 1, dose: 1, energy: 1, approval: 1, method: 1,
+        delivery: 1, overview: 1, prescription: 1, documentation: 1, imaging: 1,
+        field: 1, fields: 1, points: 1, ref: 1, initial: 1, treatment: 1,
+        checks: 1, per: 1, of: 1, and: 1, or: 1, the: 1, a: 1, an: 1, to: 1,
+        from: 1, with: 1, for: 1, in: 1, on: 1, at: 1, by: 1, yes: 1, no: 1,
+        not: 1, new: 1, next: 1, previous: 1, open: 1, close: 1, save: 1,
+        cancel: 1, help: 1, view: 1, details: 1, date: 1, time: 1, days: 1,
+        last: 1, filter: 1, search: 1, sort: 1, type: 1, unit: 1, table: 1,
+        row: 1, column: 1, header: 1, item: 1, list: 1, tree: 1, menu: 1,
+        button: 1, select: 1, label: 1, note: 1, notes: 1, comment: 1,
+        comments: 1, warning: 1, error: 1, info: 1, ready: 1, pending: 1,
+        complete: 1, completed: 1, approved: 1, active: 1, inactive: 1,
+        image: 1, images: 1, structure: 1, structures: 1, beam: 1, beams: 1,
+        patient: 1, patients: 1, history: 1, report: 1, print: 1, export: 1,
+        settings: 1, loading: 1, unknown: 1, current: 1, none: 1, na: 1,
+        days: 1, today: 1, yesterday: 1, week: 1, this: 1, update: 1, apply: 1,
+        review: 1, approve: 1, selected: 1, unselected: 1
+    };
+
+    function isSkeletonWhitelistToken(token) {
+        const value = normalizeText(token).toLowerCase();
+
+        return !!SKELETON_WHITELIST_TOKENS[value];
+    }
+
+    function maskSkeletonText(text) {
+        let value = normalizeText(text);
+
+        if (!value) return '';
+
+        const phrases = SKELETON_WHITELIST_PHRASES.slice().sort((a, b) => b.length - a.length);
+        const held = [];
+
+        phrases.forEach((phrase, index) => {
+            const re = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+
+            value = value.replace(re, () => {
+                const key = '\u0001' + '#'.repeat(held.length + 1) + '\u0001';
+
+                held.push(phrase);
+                return key;
+            });
+        });
+
+        value = value.replace(/[A-Za-z][A-Za-z0-9_]*|[0-9]+/g, token => {
+            if (isSkeletonWhitelistToken(token)) return token;
+
+            return token.replace(/[A-Za-z0-9]/g, 'x');
+        });
+
+        held.forEach((phrase, index) => {
+            value = value.replace('\u0001' + '#'.repeat(index + 1) + '\u0001', phrase);
+        });
+
+        return value;
+    }
+
+    function isSafeSkeletonClassName(name) {
+        const value = normalizeText(name);
+
+        if (!value || value.length > 24) return false;
+        if (/^ng-/.test(value) && value.length > 16) return false;
+
+        const digits = (value.match(/\d/g) || []).length;
+
+        if (digits >= 3) return false;
+        if (digits / value.length >= 0.3 && digits >= 2) return false;
+        if (/[a-f0-9]{8,}/i.test(value)) return false;
+
+        return true;
+    }
+
+    function safeSkeletonClassList(el) {
+        const raw = el && el.className != null ? String(el.className) : '';
+        const names = raw.split(/\s+/).filter(Boolean).filter(isSafeSkeletonClassName);
+
+        return names.slice(0, 8);
+    }
+
+    function skeletonAttrNames(el) {
+        const names = [];
+
+        if (!el || !el.attributes) return names;
+
+        const attrs = el.attributes;
+
+        for (let i = 0; i < attrs.length; i++) {
+            const name = attrs[i] && attrs[i].name ? String(attrs[i].name) : '';
+
+            if (!name) continue;
+            if (name === 'class' || name === 'style') continue;
+            if (name === 'role' || name.indexOf('aria-') === 0 || name.indexOf('data-') === 0) {
+                names.push(name);
+            } else if (name === 'id' || name === 'name' || name === 'title' || name === 'hidden') {
+                names.push(name);
+            }
+        }
+
+        return names;
+    }
+
+    function isSkeletonTextSafe(text) {
+        const value = String(text || '');
+        const phrases = SKELETON_WHITELIST_PHRASES.slice().sort((a, b) => b.length - a.length);
+        let rest = value;
+
+        phrases.forEach(phrase => {
+            rest = rest.replace(new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ');
+        });
+
+        rest = rest.replace(/[A-Za-z][A-Za-z0-9_]*/g, token => {
+            return isSkeletonWhitelistToken(token) ? ' ' : token;
+        });
+
+        if (/[0-9]/.test(rest)) return false;
+        if (/[A-Za-z]/.test(rest.replace(/x+/g, ' '))) return false;
+
+        return true;
+    }
+
+    function elementHasShadow(el) {
+        return !!(el && el.shadowRoot);
+    }
+
+    function elementIsIframe(el) {
+        return !!(el && (el.tagName || '').toLowerCase() === 'iframe');
+    }
+
+    function describeSkeletonNode(el, depth) {
+        if (!el || !el.tagName) return '';
+
+        const tag = (el.tagName || '').toLowerCase();
+        const classes = safeSkeletonClassList(el);
+        const attrs = skeletonAttrNames(el);
+        const kids = (el.children && el.children.length) || 0;
+        const bits = ['d' + (depth || 0), tag];
+
+        if (classes.length) bits.push('.' + classes.join('.'));
+        if (attrs.length) bits.push('attrs=' + attrs.join(','));
+        bits.push('children=' + kids);
+
+        if (elementHasShadow(el)) bits.push('shadow');
+        if (elementIsIframe(el)) bits.push('iframe');
+
+        const text = maskSkeletonText(collectDeepText(el));
+
+        if (text && text.length <= 80 && (kids === 0 || text.length <= 40)) {
+            bits.push('text=' + text);
+        }
+
+        return bits.join(' ');
+    }
+
+    function collectAncestorPath(el, limit) {
+        const parts = [];
+        let node = el;
+        const max = limit == null ? 12 : limit;
+
+        while (node && node.tagName && parts.length < max) {
+            if (node.id === 'chartcheck-panel' || node.id === 'chartcheck-dom-copy') break;
+
+            parts.push(describeSkeletonNode(node, parts.length));
+            node = node.parentElement
+                || (typeof node.getRootNode === 'function' && node.getRootNode() && node.getRootNode().host)
+                || null;
+        }
+
+        return parts.reverse();
+    }
+
+    function siblingElements(el) {
+        const parent = el && el.parentElement;
+
+        if (!parent) return [];
+
+        return Array.from(parent.children || []).filter(node => node && node.tagName);
+    }
+
+    function collectSiblingSkeletons(el, count) {
+        const kids = siblingElements(el);
+        const index = kids.indexOf(el);
+        const prev = [];
+        const next = [];
+        const take = count == null ? 3 : count;
+
+        if (index < 0) return { prev, next };
+
+        for (let i = Math.max(0, index - take); i < index; i++) {
+            prev.push(describeSkeletonNode(kids[i], 0));
+        }
+
+        for (let i = index + 1; i < kids.length && next.length < take; i++) {
+            next.push(describeSkeletonNode(kids[i], 0));
+        }
+
+        return { prev, next };
+    }
+
+    function walkSkeletonSubtree(root, lines, depth, maxDepth, maxLines) {
+        if (!root || !root.tagName || lines.length >= maxLines) return;
+        if (root.id === 'chartcheck-panel' || root.id === 'chartcheck-dom-copy') return;
+        if (depth > maxDepth) return;
+
+        lines.push((new Array(depth + 1).join('  ')) + describeSkeletonNode(root, depth));
+
+        if (elementHasShadow(root) && lines.length < maxLines) {
+            lines.push((new Array(depth + 2).join('  ')) + '#shadow');
+            const kids = root.shadowRoot.children || [];
+
+            for (let i = 0; i < kids.length && lines.length < maxLines; i++) {
+                walkSkeletonSubtree(kids[i], lines, depth + 2, maxDepth, maxLines);
+            }
+        }
+
+        if (elementIsIframe(root) && lines.length < maxLines) {
+            let inner = null;
+
+            try { inner = root.contentDocument && root.contentDocument.documentElement; } catch (err) {}
+
+            if (inner) {
+                lines.push((new Array(depth + 2).join('  ')) + 'iframe-doc');
+                walkSkeletonSubtree(inner, lines, depth + 2, maxDepth, maxLines);
+            } else {
+                lines.push((new Array(depth + 2).join('  ')) + 'iframe-closed');
+            }
+        }
+
+        const kids = root.children || [];
+
+        for (let i = 0; i < kids.length && lines.length < maxLines; i++) {
+            walkSkeletonSubtree(kids[i], lines, depth + 1, maxDepth, maxLines);
+        }
+    }
+
+    function overviewRegionRoots() {
+        const roots = [];
+        const seen = new Set();
+
+        overviewDocuments().forEach(doc => {
+            walkDom(doc, el => {
+                if (!el || !el.tagName || isInHotkeyPanel(el)) return;
+
+                const text = collectDeepText(el);
+
+                if (!text || text.length > 200) return;
+
+                const value = text.toLowerCase();
+                const hit = isDeliveredTotalFractionsLabel(text)
+                    || /prescription\s*\/\s*plan\s*overview/.test(value)
+                    || /^(rx\/)?plan\s*overview$/.test(value);
+
+                if (!hit) return;
+
+                let root = el;
+
+                for (let i = 0; i < 6 && root && root.parentElement; i++) {
+                    const parent = root.parentElement;
+
+                    if (!parent || parent === doc.body || parent === doc.documentElement) break;
+                    if (isInHotkeyPanel(parent)) break;
+
+                    root = parent;
+                }
+
+                if (seen.has(root)) return;
+
+                seen.add(root);
+                roots.push(root);
+            });
+        });
+
+        return roots.slice(0, 8);
+    }
+
+    function buildMaskedDomSkeleton() {
+        const lines = [];
+        const selects = getTemplateSelects();
+        let shadows = 0;
+        let iframes = 0;
+
+        overviewDocuments().forEach(doc => {
+            walkDom(doc, el => {
+                if (elementHasShadow(el)) shadows++;
+                if (elementIsIframe(el)) iframes++;
+            });
+        });
+
+        lines.push('# ChartCheck DOM skeleton v' + SCRIPT_VERSION + ' (PHI-masked)');
+        lines.push('# selects=' + selects.length + ' shadows=' + shadows + ' iframes=' + iframes);
+        lines.push('# text is masked; attribute values omitted except safe class names');
+
+        selects.forEach((select, index) => {
+            if (lines.length >= 400) return;
+
+            lines.push('');
+            lines.push('## select ' + (index + 1));
+            lines.push('path:');
+            collectAncestorPath(select, 12).forEach(line => lines.push('  ' + line));
+
+            const sibs = collectSiblingSkeletons(select, 3);
+
+            sibs.prev.forEach((line, i) => lines.push('prev' + (i + 1) + ': ' + line));
+            sibs.next.forEach((line, i) => lines.push('next' + (i + 1) + ': ' + line));
+        });
+
+        const regions = overviewRegionRoots();
+
+        regions.forEach((root, index) => {
+            if (lines.length >= 400) return;
+
+            lines.push('');
+            lines.push('## overview ' + (index + 1));
+            walkSkeletonSubtree(root, lines, 0, 8, 400);
+        });
+
+        if (lines.length >= 400) {
+            lines.length = 400;
+            lines[399] = '# truncated';
+        }
+
+        return lines.join('\n');
+    }
+
+    async function copyMaskedDomSkeleton() {
+        const text = buildMaskedDomSkeleton();
+        const ok = await writeClipboard(text);
+
+        if (domCopyBtn) {
+            const previous = domCopyBtn.getAttribute('data-label') || 'Copy masked DOM';
+
+            domCopyBtn.title = ok ? 'Copied masked DOM' : 'Copy failed';
+            setTimeout(() => {
+                if (domCopyBtn) domCopyBtn.title = previous;
+            }, 1600);
+        }
+
+        return ok;
+    }
+
+    function syncDomCopyButtonPosition() {
+        if (!domCopyBtn || !panel) return;
+
+        const rect = panel.getBoundingClientRect();
+        const width = domCopyBtn.offsetWidth || 28;
+        const left = Math.max(4, rect.left - width - 4);
+        const top = Math.max(4, rect.top + 8);
+
+        domCopyBtn.style.left = left + 'px';
+        domCopyBtn.style.top = top + 'px';
+        domCopyBtn.style.right = 'auto';
+        domCopyBtn.style.bottom = 'auto';
+    }
+
+    function ensureDomCopyButton() {
+        if (domCopyBtn || !document.body) return;
+
+        const btn = document.createElement('button');
+
+        btn.type = 'button';
+        btn.id = 'chartcheck-dom-copy';
+        btn.className = 'chartcheck-dom-copy';
+        btn.textContent = '⧉';
+        btn.title = 'Copy masked DOM structure (no names or IDs)';
+        btn.setAttribute('data-label', 'Copy masked DOM structure (no names or IDs)');
+        btn.setAttribute('aria-label', 'Copy masked DOM structure');
+
+        btn.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            copyMaskedDomSkeleton();
+        });
+
+        document.body.appendChild(btn);
+        domCopyBtn = btn;
+        if (typeof syncDomCopyButtonPosition === 'function') syncDomCopyButtonPosition();
+        window.addEventListener('resize', () => {
+            if (typeof syncDomCopyButtonPosition === 'function') syncDomCopyButtonPosition();
+        });
+    }
+
     function installPanelStyles() {
         if (document.getElementById('chartcheck-panel-style')) return;
 
         const style = document.createElement('style');
         style.id = 'chartcheck-panel-style';
         style.textContent = `
+            #chartcheck-dom-copy {
+                position: fixed;
+                z-index: 1000001;
+                margin: 0;
+                padding: 0 6px;
+                font-family: monospace;
+                font-size: 16px;
+                line-height: 1.4;
+                color: #04140c;
+                background: #00ff66;
+                border: 1px solid #00ff66;
+                border-radius: 3px;
+                cursor: pointer;
+                pointer-events: auto;
+                width: auto;
+                height: auto;
+            }
+
+            #chartcheck-dom-copy:hover,
+            #chartcheck-dom-copy:focus {
+                background: #04140c;
+                color: #00ff66;
+            }
+
             #chartcheck-panel {
                 position: fixed;
                 right: 10px;
@@ -3874,6 +4577,7 @@
 
         panel.style.left = left + 'px';
         panel.style.top = top + 'px';
+        if (typeof syncDomCopyButtonPosition === 'function') syncDomCopyButtonPosition();
     }
 
     function makePanelDraggable(root, handle) {
@@ -3893,6 +4597,7 @@
 
             root.style.left = left + 'px';
             root.style.top = top + 'px';
+            if (typeof syncDomCopyButtonPosition === 'function') syncDomCopyButtonPosition();
             e.preventDefault();
         }
 
@@ -4142,8 +4847,13 @@
         helpList = list;
         statusEl = status;
         document.body.appendChild(root);
+        ensureDomCopyButton();
+        requestAnimationFrame(() => {
+            if (typeof syncDomCopyButtonPosition === 'function') syncDomCopyButtonPosition();
+        });
         window.addEventListener('resize', () => {
             if (panelHidden) dockMinimizedPanel();
+            if (typeof syncDomCopyButtonPosition === 'function') syncDomCopyButtonPosition();
         });
         window.addEventListener('resize', updateSiteFrame);
         list.addEventListener('scroll', updateSiteFrame);
@@ -4214,6 +4924,8 @@
                 panel.style.bottom = 'auto';
                 panel.style.top = '10px';
             }
+
+            if (typeof syncDomCopyButtonPosition === 'function') syncDomCopyButtonPosition();
         });
     }
 
@@ -4253,6 +4965,9 @@
 
         refreshPatientSiteGray();
         requestAnimationFrame(updateSiteFrame);
+        requestAnimationFrame(() => {
+            if (typeof syncDomCopyButtonPosition === 'function') syncDomCopyButtonPosition();
+        });
     }
 
     function hidePanel() {
@@ -4263,6 +4978,9 @@
         panel.classList.add('chartcheck-minimized');
         panel.setAttribute('aria-hidden', 'false');
         dockMinimizedPanel();
+        requestAnimationFrame(() => {
+            if (typeof syncDomCopyButtonPosition === 'function') syncDomCopyButtonPosition();
+        });
     }
 
     // LDH minimizes the panel to its title bar.
