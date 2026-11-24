@@ -10,13 +10,13 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.48', /@version\s+3\.48\b/.test(src));
-ok('no leftover 3.47', !/\b3\.47\b/.test(src));
+ok('@version 3.49', /@version\s+3\.49\b/.test(src));
+ok('no leftover 3.48', !/\b3\.48\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('document-order scan is used to pair selects with preceding labels', src.includes('function scanTemplateMatchPage(') && src.includes('function nearestPrecedingLabel(') && src.includes('function walkElementsInOrder('));
 ok('equal select and block counts map by document-order index', src.includes('list.length === rows.length') && src.includes('scan.overviews'));
 ok('tooltip reason can include non-PHI counts', src.includes('function formatReviewReason(') && src.includes(" + ' sel=' + countValue('sel')") && src.includes(" + ' unsel=' + countValue('unsel')"));
-ok('SBRT gray-out still uses the page-wide first fraction read', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTotalFractions\(\);/.test(src));
+ok('SBRT gray-out uses unselected-plan fractions', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTemplateGrayFractions\(\);/.test(src));
 
 const helperStart = src.indexOf('    function isValidSiteTemplate(');
 const helperEnd = src.indexOf('    function checksNeedTemplatePrompt(');

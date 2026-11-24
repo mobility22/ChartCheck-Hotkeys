@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.48', /@version\s+3\.48\b/.test(src));
-ok('no leftover 3.47', !/\b3\.47\b/.test(src));
+ok('@version 3.49', /@version\s+3\.49\b/.test(src));
+ok('no leftover 3.48', !/\b3\.48\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('Check Template selects are preferred over other ROS_/OAK_ dropdowns', src.includes('function filterCheckTemplateSelects(') && src.includes('function hasPrecedingCheckTemplateLabel(') && src.includes('function optionLooksLikeCheckTemplate('));
 ok('date-filter selects are ignored', src.includes('function selectLooksLikeDateFilter('));
@@ -20,7 +20,7 @@ ok('Course: prefix joins a following title sibling', src.includes('A bare course
 ok('rows can be paired by nearest document order when blocks are 0', src.includes('const allowNear = Number(settings.blocks) === 0 && rows.length > 0') && src.includes(" + ' near=' + countValue('near')"));
 ok('masked DOM copy button is a separate fixed control', src.includes("btn.id = 'chartcheck-dom-copy'") && src.includes('function buildMaskedDomSkeleton(') && src.includes('function maskSkeletonText(') && /#chartcheck-dom-copy \{\s*[\s\S]*?position:\s*fixed;/.test(src));
 ok('panel width rules are unchanged', /#chartcheck-panel \{\s*[\s\S]*?width:\s*max-content;/.test(src) && /#chartcheck-panel \.chartcheck-review-note \{\s*[\s\S]*?width:\s*0;[\s\S]*?min-width:\s*100%;/.test(src));
-ok('SBRT gray-out still uses the page-wide first fraction read', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTotalFractions\(\);/.test(src));
+ok('SBRT gray-out uses unselected-plan fractions', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTemplateGrayFractions\(\);/.test(src));
 ok('the copy button does not log skeleton text', !/console\.(log|info|debug)\(\s*text/.test(src.slice(src.indexOf('async function copyMaskedDomSkeleton('), src.indexOf('function syncDomCopyButtonPosition('))));
 
 const helperStart = src.indexOf('    function isValidSiteTemplate(');

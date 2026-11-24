@@ -10,11 +10,11 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.48', /@version\s+3\.48\b/.test(src));
-ok('no leftover 3.47', !/\b3\.47\b/.test(src));
+ok('@version 3.49', /@version\s+3\.49\b/.test(src));
+ok('no leftover 3.48', !/\b3\.48\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
-ok('SBRT gray-out still uses the page-wide first fraction read', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTotalFractions\(\);/.test(src));
+ok('SBRT gray-out uses unselected-plan fractions', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTemplateGrayFractions\(\);/.test(src));
 ok('Review matches each unselected plan to its own overview table', src.includes('function resolvePlanTemplateContexts(') && src.includes('function findOverviewPlanRecords(') && src.includes('function findPlanNameNearSelect('));
 const ensureStart = src.indexOf('    async function ensureReviewTemplates(');
 const ensureEnd = src.indexOf('    // ============================================================\n    // Patient Navigation');
