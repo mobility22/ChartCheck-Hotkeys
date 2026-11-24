@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.49
+// @version      3.50
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -3824,15 +3824,16 @@
         return totalFractions != null && totalFractions > 5;
     }
 
-    // Use unselected-plan fx for SBRT/Standard gray-out.
-    // Enable SBRT if any unselected plan has fx<=5, or if fx is
-    // unknown. Mute SBRT only when every unselected plan has a
-    // known total greater than 5. Standard is never muted by fx.
-    function sbrtGrayFractionsFromUnselected(planStates) {
+    // Use each plan's fx for SBRT/Standard gray-out, whether or
+    // not a Check Template is already selected.
+    // Enable SBRT if any plan has known fx<=5, or if any plan's
+    // fx is unknown. Mute SBRT only when every plan has a known
+    // total greater than 5. Standard is never muted by fx.
+    function sbrtGrayFractionsFromPlans(planStates) {
         const totals = [];
 
         (planStates || []).forEach(state => {
-            if (!state || state.filled || state.unselected === false) return;
+            if (!state) return;
 
             const fx = state.totalFractions;
 
@@ -3897,7 +3898,7 @@
             blocks: tableCount || (scan.counts.blocks != null ? scan.counts.blocks : 0)
         });
 
-        return sbrtGrayFractionsFromUnselected(match.contexts);
+        return sbrtGrayFractionsFromPlans(match.contexts);
     }
 
     function isTemplateHotkeyMuted(sitePair, isSbrt) {
