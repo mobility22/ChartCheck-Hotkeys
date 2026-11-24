@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.49', /@version\s+3\.49\b/.test(src));
-ok('no leftover 3.48', !/\b3\.48\b/.test(src));
+ok('@version 3.50', /@version\s+3\.50\b/.test(src));
+ok('no leftover 3.49', !/\b3\.49\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('Check Template selects are preferred over other ROS_/OAK_ dropdowns', src.includes('function filterCheckTemplateSelects(') && src.includes('function hasPrecedingCheckTemplateLabel(') && src.includes('function optionLooksLikeCheckTemplate('));
 ok('date-filter selects are ignored', src.includes('function selectLooksLikeDateFilter('));

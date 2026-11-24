@@ -10,12 +10,12 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.49', /@version\s+3\.49\b/.test(src));
-ok('no leftover 3.48', !/\b3\.48\b/.test(src));
+ok('@version 3.50', /@version\s+3\.50\b/.test(src));
+ok('no leftover 3.49', !/\b3\.49\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
-ok('gray-out reads unselected plan fractions from 3.48 matching', src.includes('function sbrtGrayFractionsFromUnselected(') && src.includes('function readTemplateGrayFractions(') && src.includes('resolvePlanTemplateMatch('));
+ok('gray-out reads plan fractions from 3.48 matching', src.includes('function sbrtGrayFractionsFromPlans(') && src.includes('function readTemplateGrayFractions(') && src.includes('resolvePlanTemplateMatch('));
 ok('applyPatientSiteGray no longer uses the page-wide first fraction total', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTemplateGrayFractions\(\);/.test(src) && /function applyPatientSiteGray\([\s\S]*?readTotalFractions\(\);/.test(src) === false);
-ok('template clicks use the same unselected-plan fraction source', /function isTemplateHotkeyMuted\([\s\S]*?readTemplateGrayFractions\(\)/.test(src));
+ok('template clicks use the same plan fraction source', /function isTemplateHotkeyMuted\([\s\S]*?readTemplateGrayFractions\(\)/.test(src));
 ok('SBRT gray-out still uses the site-muted class', src.includes("row.classList.toggle('chartcheck-site-muted', mute)"));
 
 const helperStart = src.indexOf('    function isValidSiteTemplate(');
@@ -31,7 +31,7 @@ const helpers = new Function(
     + src.slice(normStart, normEnd)
     + src.slice(helperStart, helperEnd)
     + src.slice(muteStart, muteEnd)
-    + '\nreturn { resolvePlanTemplateMatch, templateReviewDecision, resolveReviewSite, sbrtGrayFractionsFromUnselected, shouldMuteSiteSbrt, isSiteTemplateMuted, formatReviewReason };'
+    + '\nreturn { resolvePlanTemplateMatch, templateReviewDecision, resolveReviewSite, sbrtGrayFractionsFromPlans, shouldMuteSiteSbrt, isSiteTemplateMuted, formatReviewReason };'
 )();
 
 function filled(course, plan) {
@@ -56,7 +56,7 @@ const threeCourse = helpers.resolvePlanTemplateMatch(
 );
 ok('the unselected third-course plan matches its own fx 5, not the first table fx 17', threeCourse.contexts[2].tableFound === true && threeCourse.contexts[2].totalFractions === 5 && threeCourse.contexts[0].filled === true && threeCourse.contexts[1].filled === true);
 
-const grayFx = helpers.sbrtGrayFractionsFromUnselected(threeCourse.contexts);
+const grayFx = helpers.sbrtGrayFractionsFromPlans(threeCourse.contexts);
 ok('gray-out fx is the unselected plan 5, not the first course 17', grayFx === 5);
 ok('SBRT stays enabled when the unselected plan has 5 fractions', helpers.shouldMuteSiteSbrt(grayFx) === false);
 ok('ROS SBRT and ROS Standard both stay enabled at fx 5', helpers.isSiteTemplateMuted('roseville', grayFx, 'ros', true) === false && helpers.isSiteTemplateMuted('roseville', grayFx, 'ros', false) === false);
@@ -74,36 +74,36 @@ const review = helpers.templateReviewDecision(
 );
 ok('Review still stops with fx<=5 for the unselected 5-fx plan', review.action === 'stop' && review.reason === 'fx<=5');
 
-const twoUnselected = helpers.sbrtGrayFractionsFromUnselected([
+const twoUnselected = helpers.sbrtGrayFractionsFromPlans([
     { filled: true, unselected: false, tableFound: false, totalFractions: null },
     { filled: false, unselected: true, tableFound: true, totalFractions: 17 },
     { filled: false, unselected: true, tableFound: true, totalFractions: 5 }
 ]);
 ok('multiple unselected plans enable SBRT if any has fx<=5', twoUnselected === 5 && helpers.shouldMuteSiteSbrt(twoUnselected) === false);
 
-const allLong = helpers.sbrtGrayFractionsFromUnselected([
-    { filled: true, unselected: false, tableFound: true, totalFractions: 5 },
+const allLong = helpers.sbrtGrayFractionsFromPlans([
+    { filled: true, unselected: false, tableFound: true, totalFractions: 28 },
     { filled: false, unselected: true, tableFound: true, totalFractions: 17 },
     { filled: false, unselected: true, tableFound: true, totalFractions: 30 }
 ]);
-ok('SBRT is muted only when every unselected plan has fx>5', allLong === 17 && helpers.shouldMuteSiteSbrt(allLong) === true);
-ok('Standard stays enabled even when every unselected plan has fx>5', helpers.isSiteTemplateMuted('roseville', allLong, 'ros', false) === false && helpers.isSiteTemplateMuted('roseville', allLong, 'ros', true) === true);
+ok('SBRT is muted only when every plan has fx>5', allLong === 28 && helpers.shouldMuteSiteSbrt(allLong) === true);
+ok('Standard stays enabled even when every plan has fx>5', helpers.isSiteTemplateMuted('roseville', allLong, 'ros', false) === false && helpers.isSiteTemplateMuted('roseville', allLong, 'ros', true) === true);
 
-const unknownFx = helpers.sbrtGrayFractionsFromUnselected([
+const unknownFx = helpers.sbrtGrayFractionsFromPlans([
     { filled: false, unselected: true, tableFound: false, totalFractions: null }
 ]);
 ok('unknown unselected fx leaves SBRT enabled', unknownFx == null && helpers.shouldMuteSiteSbrt(unknownFx) === false && helpers.isSiteTemplateMuted('roseville', unknownFx, 'ros', true) === false);
 
-const mixedUnknown = helpers.sbrtGrayFractionsFromUnselected([
+const mixedUnknown = helpers.sbrtGrayFractionsFromPlans([
     { filled: false, unselected: true, tableFound: true, totalFractions: 17 },
     { filled: false, unselected: true, tableFound: false, totalFractions: null }
 ]);
 ok('a long-course unselected plus an unknown fx still leaves SBRT enabled', mixedUnknown == null && helpers.shouldMuteSiteSbrt(mixedUnknown) === false);
 
-const noneUnselected = helpers.sbrtGrayFractionsFromUnselected([
-    { filled: true, unselected: false, tableFound: false, totalFractions: 17 }
+const noneUnselected = helpers.sbrtGrayFractionsFromPlans([
+    { filled: true, unselected: false, tableFound: true, totalFractions: 17 }
 ]);
-ok('when every plan is already selected, SBRT is left enabled', noneUnselected == null && helpers.shouldMuteSiteSbrt(noneUnselected) === false);
+ok('when every plan is already selected, a known fx>5 still mutes SBRT', noneUnselected === 17 && helpers.shouldMuteSiteSbrt(noneUnselected) === true);
 
 if (failed) {
     process.exitCode = 1;
