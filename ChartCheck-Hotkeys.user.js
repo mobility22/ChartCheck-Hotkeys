@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.45
+// @version      3.46
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -709,13 +709,33 @@
     }
 
     function parseCourseLabel(text) {
-        const value = normalizeText(text);
+        const value = normalizeText(text).replace(/[：∶﹕]/g, ':');
 
         if (!value || value.length > 200) return '';
 
-        const match = /^course:\s*(.+)$/i.exec(value);
+        let match = /^(course\s*id|course)\s*[:.\-]\s*(.+)$/i.exec(value);
 
-        return match ? normalizeText(match[1]) : '';
+        if (match) return normalizeText(match[2]);
+
+        match = /^(course\s*id|course)\s+(c\s*\d+[\s\S]*)$/i.exec(value);
+
+        if (match) return normalizeText(match[2]);
+
+        match = /^(course\s*id|course)\s+(.+)$/i.exec(value);
+
+        if (match) {
+            const rest = normalizeText(match[2]);
+
+            if (rest && !/^(id|name|title|of|for)$/i.test(rest)) {
+                return rest;
+            }
+        }
+
+        if (/^c\s*\d+\s*-/i.test(value) && value.length <= 100) {
+            return value;
+        }
+
+        return '';
     }
 
     function normalizePlanName(name) {
@@ -750,7 +770,9 @@
 
         if (!value) return '';
 
+        value = value.replace(/^course\s*id\s*[:.\-]?\s*/i, '');
         value = value.replace(/^course:\s*/i, '');
+        value = value.replace(/^course\s+/i, '');
         value = value.replace(/^plan\s*name\s*[:.\-]?\s*/i, '');
         value = value.replace(/^plan:\s*/i, '');
 
@@ -793,8 +815,10 @@
 
         if (!rest) return '';
 
-        if (/^course:\s*$/i.test(prefix) || /^plan:\s*$/i.test(prefix)) {
-            return prefix.replace(/:\s*$/, ':') + ' ' + rest;
+        if (/^(course(\s*id)?|plan)\s*[:.\-]?\s*$/i.test(prefix)) {
+            const kind = /^plan/i.test(prefix) ? 'Plan: ' : 'Course: ';
+
+            return kind + rest;
         }
 
         return '';
@@ -819,18 +843,27 @@
         if (!detail) return '';
 
         const data = counts || {};
-        const sel = Number(data.sel);
-        const blocks = Number(data.blocks);
-        const courses = Number(data.courses);
 
-        if (![sel, blocks, courses].every(Number.isFinite)) {
-            return detail;
+        function countValue(key) {
+            const value = Number(data[key]);
+
+            return Number.isFinite(value) ? value : 0;
         }
 
-        return detail
-            + ' sel=' + sel
-            + ' blocks=' + blocks
-            + ' courses=' + courses;
+        let text = detail
+            + ' sel=' + countValue('sel')
+            + ' unsel=' + countValue('unsel')
+            + ' blocks=' + countValue('blocks')
+            + ' rows=' + countValue('rows')
+            + ' courses=' + countValue('courses')
+            + ' planLabels=' + countValue('planLabels')
+            + ' matched=' + countValue('matched');
+
+        if (data.fail) {
+            text += ' fail=' + String(data.fail).trim();
+        }
+
+        return text;
     }
 
     function isPlanNameLabel(text) {
@@ -882,6 +915,180 @@
         return '';
     }
 
+    function readAllPlanNamesFromCells(cells) {
+        const names = [];
+
+        if (!cells || !cells.length) return names;
+
+        const seen = new Set();
+
+        function addName(name) {
+            const value = normalizeText(name);
+
+            if (!value) return;
+
+            const key = looseLabelKey(value);
+
+            if (!key || seen.has(key)) return;
+
+            seen.add(key);
+            names.push(value);
+        }
+
+        for (let i = 0; i < cells.length; i++) {
+            const fromSame = planNameFromLabeledText(cells[i]);
+
+            if (fromSame) addName(fromSame);
+        }
+
+        for (let i = 0; i < cells.length; i++) {
+            if (!isPlanNameLabel(cells[i])) continue;
+
+            for (let j = i + 1; j < cells.length && j <= i + 3; j++) {
+                const next = normalizeText(cells[j]);
+
+                if (!next) continue;
+                if (isPlanNameLabel(next)) break;
+                if (planNameFromLabeledText(cells[j])) continue;
+                if (isDeliveredTotalFractionsLabel(next)) break;
+                if (isOverviewFieldLabel(next)) break;
+
+                addName(next);
+                break;
+            }
+        }
+
+        return names;
+    }
+
+    function readAllFractionTotalsFromCells(cells) {
+        const totals = [];
+
+        if (!cells || !cells.length) return totals;
+
+        for (let i = 0; i < cells.length; i++) {
+            if (!isDeliveredTotalFractionsLabel(cells[i])) continue;
+
+            const row = [];
+
+            for (let j = i + 1; j < cells.length && j <= i + 8; j++) {
+                const next = cells[j];
+
+                if (!next) break;
+                if (isDeliveredTotalFractionsLabel(next)) break;
+                if (isOverviewFieldLabel(next)) break;
+
+                row.push(next);
+            }
+
+            const fromPlan = parseFractionPairTotal(row.join(' '));
+
+            if (fromPlan != null) {
+                totals.push(fromPlan);
+                continue;
+            }
+
+            row.forEach(cell => {
+                const pair = parseFractionPairTotal(cell);
+                const lone = loneFractionInteger(cell);
+
+                if (pair != null) totals.push(pair);
+                else if (lone != null) totals.push(lone);
+            });
+        }
+
+        if (totals.length) return totals;
+
+        const fallback = readTotalFractionsFromCells(cells);
+
+        return fallback != null ? [fallback] : [];
+    }
+
+    function extractPlanRowsFromCells(cells, courseName) {
+        const names = readAllPlanNamesFromCells(cells);
+        const totals = readAllFractionTotalsFromCells(cells);
+        const course = courseName || '';
+
+        if (!names.length && !totals.length) return [];
+
+        if (names.length && totals.length === names.length) {
+            return names.map((planName, index) => ({
+                courseName: course,
+                planName,
+                totalFractions: totals[index]
+            }));
+        }
+
+        if (names.length === 1 && totals.length) {
+            return [{
+                courseName: course,
+                planName: names[0],
+                totalFractions: totals[totals.length - 1]
+            }];
+        }
+
+        if (!names.length && totals.length === 1) {
+            return [{
+                courseName: course,
+                planName: '',
+                totalFractions: totals[0]
+            }];
+        }
+
+        if (names.length && totals.length === 1) {
+            return names.map(planName => ({
+                courseName: course,
+                planName,
+                totalFractions: totals[0]
+            }));
+        }
+
+        return [];
+    }
+
+    function isNestedOverviewBlock(outer, inner) {
+        if (!outer || !inner || outer === inner) return false;
+
+        if (
+            outer.container
+            && inner.container
+            && outer.container !== inner.container
+            && typeof outer.container.contains === 'function'
+        ) {
+            return outer.container.contains(inner.container);
+        }
+
+        const ancestors = inner.ancestorIds || [];
+
+        return !!outer.id && ancestors.indexOf(outer.id) >= 0;
+    }
+
+    function dedupeOverviewBlocks(blocks) {
+        const list = (blocks || []).filter(block => (
+            block
+            && (block.planName || block.totalFractions != null)
+        ));
+        const seen = [];
+
+        return list.filter((block, index) => {
+            if (list.some((other, otherIndex) => (
+                otherIndex !== index && isNestedOverviewBlock(block, other)
+            ))) {
+                return false;
+            }
+
+            const key = block.container || block.id;
+
+            if (key != null && seen.indexOf(key) >= 0) {
+                return false;
+            }
+
+            if (key != null) seen.push(key);
+
+            return true;
+        });
+    }
+
     function inferPatientSiteFromTemplates(selectedTexts, optionLists) {
         const selected = Array.isArray(selectedTexts) ? selectedTexts : [];
 
@@ -919,54 +1126,150 @@
         );
     }
 
-    // Match an unselected template dropdown to its overview table:
-    // course title first (tree "Course: X" vs the main-area section
-    // heading), then plan name (tree "Plan: X" vs the table "Plan
-    // name" header), then document order, then process of
-    // elimination when only one unselected plan and one table
-    // remain. Filled plans are left untouched.
-    function resolvePlanTemplateContexts(plans, overviews) {
+    // Match an unselected template dropdown to a plan row:
+    // plan name first, then course title, then document-order
+    // index when dropdowns and rows line up, then remaining
+    // unselected dropdowns against leftover rows. Filled
+    // dropdowns are left untouched but can claim a row.
+    function resolvePlanTemplateMatch(plans, overviews) {
         const list = Array.isArray(plans) ? plans : [];
-        const tables = Array.isArray(overviews) ? overviews : [];
+        const rows = Array.isArray(overviews) ? overviews : [];
         const used = new Set();
+        const failed = [];
 
-        function claim(table) {
-            if (!table) return null;
+        function claim(row) {
+            if (!row) return null;
 
-            const index = tables.indexOf(table);
+            const index = rows.indexOf(row);
 
             if (index >= 0) used.add(index);
 
-            return table;
+            return row;
         }
 
-        function matchTable(plan, index) {
-            const courseName = plan && plan.courseName ? plan.courseName : '';
+        function uniqueUnused(hits) {
+            const free = hits.filter((row, index) => {
+                const at = rows.indexOf(row);
+
+                return at >= 0 && !used.has(at) && hits.indexOf(row) === index;
+            });
+
+            return free.length === 1 ? claim(free[0]) : null;
+        }
+
+        function matchByPlanName(plan) {
             const planName = plan && plan.planName ? plan.planName : '';
 
-            if (courseName) {
-                const hits = tables.filter(item => courseKeysMatch(item && item.courseName, courseName));
+            if (!planName) return null;
 
-                if (hits.length === 1) return claim(hits[0]);
-            }
-
-            if (planName) {
-                const hits = tables.filter(item => planNamesMatch(item && item.planName, planName));
-
-                if (hits.length === 1) return claim(hits[0]);
-            }
-
-            return null;
+            return uniqueUnused(rows.filter(item => planNamesMatch(item && item.planName, planName)));
         }
 
-        // Selected plans also claim a block when possible, so a later
-        // unselected plan is not given a table that already belongs
-        // to a filled dropdown.
+        function matchByCourse(plan) {
+            const courseName = plan && plan.courseName ? plan.courseName : '';
+
+            if (!courseName) return null;
+
+            return uniqueUnused(rows.filter(item => courseKeysMatch(item && item.courseName, courseName)));
+        }
+
+        const filledClaimed = list.map(() => false);
+
         list.forEach((plan, index) => {
-            if (plan && plan.filled) matchTable(plan, index);
+            if (plan && plan.filled) {
+                if (matchByPlanName(plan) || matchByCourse(plan)) {
+                    filledClaimed[index] = true;
+                }
+            }
         });
 
-        const result = list.map((plan, index) => {
+        const assigned = list.map(() => null);
+        let nameHits = 0;
+
+        list.forEach((plan, index) => {
+            if (!plan || plan.filled || plan.unselected === false) return;
+
+            const row = matchByPlanName(plan);
+
+            if (row) {
+                assigned[index] = row;
+                nameHits++;
+            }
+        });
+
+        if (list.some((plan, index) => plan && !plan.filled && plan.unselected !== false && !assigned[index])) {
+            failed.push('name');
+        }
+
+        let courseHits = 0;
+
+        list.forEach((plan, index) => {
+            if (!plan || plan.filled || plan.unselected === false || assigned[index]) return;
+
+            const row = matchByCourse(plan);
+
+            if (row) {
+                assigned[index] = row;
+                courseHits++;
+            }
+        });
+
+        if (list.some((plan, index) => plan && !plan.filled && plan.unselected !== false && !assigned[index])) {
+            failed.push('course');
+        }
+
+        let indexHits = 0;
+
+        if (list.length === rows.length) {
+            list.forEach((plan, index) => {
+                if (plan && plan.filled) {
+                    used.add(index);
+                    return;
+                }
+
+                if (!plan || plan.unselected === false || assigned[index]) return;
+
+                if (rows[index] && !used.has(index)) {
+                    used.add(index);
+                    assigned[index] = rows[index];
+                    indexHits++;
+                }
+            });
+        }
+
+        const leftoverPlans = [];
+
+        list.forEach((plan, index) => {
+            if (plan && !plan.filled && plan.unselected !== false && !assigned[index]) {
+                leftoverPlans.push(index);
+            }
+        });
+
+        const leftoverRows = [];
+
+        rows.forEach((row, index) => {
+            if (!used.has(index)) leftoverRows.push(row);
+        });
+
+        const unmatchedFilled = list.filter((plan, index) => plan && plan.filled && !filledClaimed[index]).length;
+
+        if (
+            leftoverPlans.length
+            && leftoverPlans.length === leftoverRows.length
+            && unmatchedFilled === 0
+        ) {
+            leftoverPlans.forEach((planIndex, offset) => {
+                assigned[planIndex] = claim(leftoverRows[offset]);
+                indexHits++;
+            });
+            leftoverPlans.length = 0;
+        }
+
+        if (leftoverPlans.length) {
+            failed.push('index');
+        }
+
+        const contexts = list.map((plan, index) => {
             if (plan && plan.filled) {
                 return {
                     filled: true,
@@ -987,9 +1290,9 @@
                 };
             }
 
-            const table = matchTable(plan, index);
+            const row = assigned[index];
 
-            if (!table) {
+            if (!row) {
                 return {
                     filled: false,
                     unselected: true,
@@ -1002,83 +1305,38 @@
                 filled: false,
                 unselected: true,
                 tableFound: true,
-                totalFractions: table.totalFractions
+                totalFractions: row.totalFractions
             };
         });
 
-        // When the number of template dropdowns equals the number of
-        // overview blocks, map them by document order, including
-        // filled dropdowns which account for their block.
-        if (list.length === tables.length) {
-            result.forEach((state, index) => {
-                if (state && state.filled) {
-                    used.add(index);
-                    return;
-                }
+        const unsel = list.filter(plan => plan && !plan.filled && plan.unselected !== false).length;
+        const matched = contexts.filter(state => state && state.unselected && state.tableFound).length;
+        const courseNames = {};
+        const planLabels = list.filter(plan => plan && plan.planName).length;
 
-                if (!state || state.unselected === false || state.tableFound) {
-                    return;
-                }
+        list.concat(rows).forEach(item => {
+            const key = looseLabelKey(item && item.courseName);
 
-                if (tables[index] && !used.has(index)) {
-                    used.add(index);
-                    result[index] = {
-                        filled: false,
-                        unselected: true,
-                        tableFound: true,
-                        totalFractions: tables[index].totalFractions
-                    };
-                }
-            });
-        }
+            if (key) courseNames[key] = true;
+        });
 
-        const unmatched = [];
-
-        result.forEach((state, index) => {
-            if (state && !state.filled && state.unselected !== false && !state.tableFound) {
-                unmatched.push(index);
+        return {
+            contexts,
+            stats: {
+                sel: list.length,
+                unsel,
+                blocks: rows.length,
+                rows: rows.length,
+                courses: Object.keys(courseNames).length,
+                planLabels,
+                matched,
+                fail: leftoverPlans.length ? failed.join(',') : ''
             }
-        });
+        };
+    }
 
-        const unused = [];
-
-        tables.forEach((table, index) => {
-            if (!used.has(index)) unused.push(table);
-        });
-
-        const unselectedCount = list.filter(plan => plan && !plan.filled && plan.unselected !== false).length;
-        const filledCount = list.filter(plan => plan && plan.filled).length;
-
-        if (unmatched.length === 1 && unused.length === 1 && used.size > 0) {
-            const index = unmatched[0];
-            const table = unused[0];
-
-            claim(table);
-            result[index] = {
-                filled: false,
-                unselected: true,
-                tableFound: true,
-                totalFractions: table.totalFractions
-            };
-        } else if (
-            unmatched.length === 1
-            && tables.length === 1
-            && unselectedCount === 1
-            && filledCount === 0
-        ) {
-            const index = unmatched[0];
-            const table = tables[0];
-
-            claim(table);
-            result[index] = {
-                filled: false,
-                unselected: true,
-                tableFound: true,
-                totalFractions: table.totalFractions
-            };
-        }
-
-        return result;
+    function resolvePlanTemplateContexts(plans, overviews) {
+        return resolvePlanTemplateMatch(plans, overviews).contexts;
     }
 
     // Decide what Review should do for unselected plans only.
@@ -1330,27 +1588,55 @@
         if (!el || !el.tagName) return { course: '', plan: '' };
 
         const text = collectDeepText(el);
-        const value = normalizeText(text);
+        const value = normalizeText(text).replace(/[：∶﹕]/g, ':');
+        const tag = (el.tagName || '').toLowerCase();
+        const attrs = [
+            el.getAttribute ? el.getAttribute('aria-label') : '',
+            el.getAttribute ? el.getAttribute('title') : ''
+        ];
+
+        for (let i = 0; i < attrs.length; i++) {
+            const fromCourse = parseCourseLabel(attrs[i]);
+            const fromPlan = parsePlanTreeLabel(attrs[i]);
+
+            if (fromCourse) {
+                return { course: fromCourse, plan: '' };
+            }
+
+            if (fromPlan) {
+                return { course: '', plan: fromPlan };
+            }
+        }
 
         if (!value || value.length > 240) return { course: '', plan: '' };
 
-        if (/^course:\s*$/i.test(value) || /^plan:\s*$/i.test(value)) {
+        if (/^(course(\s*id)?|plan)\s*[:.\-]?\s*$/i.test(value)) {
             const joined = joinSplitPrefixedLabel(value, followingSiblingTexts(el));
 
             return {
-                course: /^course:/i.test(value) ? (parseCourseLabel(joined) || looseLabelKey(joined)) : '',
-                plan: /^plan:/i.test(value) ? (parsePlanTreeLabel(joined) || looseLabelKey(joined)) : ''
+                course: /^plan/i.test(value) ? '' : (parseCourseLabel(joined) || looseLabelKey(joined)),
+                plan: /^plan/i.test(value) ? (parsePlanTreeLabel(joined) || looseLabelKey(joined)) : ''
             };
         }
 
-        if (!isInnermostDeepText(el, text) && text !== value) {
+        const heading = /^h[1-6]$/.test(tag)
+            || tag === 'strong'
+            || tag === 'b'
+            || tag === 'label'
+            || tag === 'legend';
+
+        if (!heading && !isInnermostDeepText(el, text) && text !== value) {
             return { course: '', plan: '' };
         }
 
-        return {
-            course: parseCourseLabel(text),
-            plan: parsePlanTreeLabel(text)
-        };
+        const course = parseCourseLabel(text);
+        const plan = parsePlanTreeLabel(text);
+
+        if (course && (heading || value.length <= 120 || isInnermostDeepText(el, text))) {
+            return { course, plan };
+        }
+
+        return { course: heading ? course : '', plan };
     }
 
     function walkElementsInOrder(root, visit, seen) {
@@ -1450,25 +1736,72 @@
             if (plan) planBySelect.set(item.el, plan);
         });
 
-        const overviews = [];
+        const rawBlocks = [];
 
         events.forEach(item => {
             if (item.kind !== 'fractions') return;
 
             const record = readOverviewRecordFromFractionsLabel(item.el);
+            let container = item.el;
+            const ancestorIds = [];
+
+            for (let i = 0; i < 12 && container && container.parentElement; i++) {
+                const parent = container.parentElement;
+
+                if (!parent || countInnermostFractionsLabels(parent) > 1) break;
+
+                ancestorIds.push(parent);
+                container = parent;
+
+                const cells = [];
+
+                collectOverviewCells(container, cells);
+
+                if (readAllPlanNamesFromCells(cells).length || readTotalFractionsFromCells(cells) != null) {
+                    break;
+                }
+            }
+
+            const cells = [];
+
+            collectOverviewCells(container || item.el, cells);
+
             const courseName = nearestPrecedingLabel(item.order, courseEvents)
                 || (record && record.courseName)
                 || '';
-            const planName = record && record.planName ? record.planName : '';
-            const totalFractions = record && record.totalFractions != null
-                ? record.totalFractions
-                : null;
 
-            if (totalFractions != null) {
+            rawBlocks.push({
+                id: container || item.el,
+                container: container || item.el,
+                ancestorIds,
+                courseName,
+                planName: record && record.planName ? record.planName : readPlanNameFromCells(cells),
+                totalFractions: record && record.totalFractions != null
+                    ? record.totalFractions
+                    : readTotalFractionsFromCells(cells),
+                cells
+            });
+        });
+
+        const uniqueBlocks = dedupeOverviewBlocks(rawBlocks);
+        const overviews = [];
+
+        uniqueBlocks.forEach(block => {
+            const rows = extractPlanRowsFromCells(block.cells || [], block.courseName);
+
+            if (rows.length) {
+                rows.forEach(row => {
+                    if (!row.courseName) row.courseName = block.courseName || '';
+                    overviews.push(row);
+                });
+                return;
+            }
+
+            if (block.totalFractions != null && block.planName) {
                 overviews.push({
-                    courseName,
-                    planName,
-                    totalFractions
+                    courseName: block.courseName || '',
+                    planName: block.planName,
+                    totalFractions: block.totalFractions
                 });
             }
         });
@@ -1478,10 +1811,13 @@
             courseBySelect,
             planBySelect,
             overviews,
+            uniqueBlocks,
             counts: {
                 sel: (selects || []).length,
-                blocks: overviews.length,
-                courses: courseEvents.length
+                blocks: uniqueBlocks.length,
+                rows: overviews.length,
+                courses: courseEvents.length,
+                planLabels: planEvents.length
             }
         };
     }
@@ -1696,15 +2032,19 @@
         const overviews = scan.overviews.length
             ? scan.overviews
             : findOverviewPlanRecords();
-        const counts = {
+        const match = resolvePlanTemplateMatch(plans, overviews);
+        const unsel = plans.filter(plan => plan && !plan.filled && plan.unselected).length;
+        const counts = Object.assign({}, match.stats, {
             sel: selects.length,
-            blocks: overviews.length,
-            courses: scan.counts.courses
-        };
-        const contexts = resolvePlanTemplateContexts(plans, overviews);
+            unsel,
+            blocks: scan.counts.blocks != null ? scan.counts.blocks : overviews.length,
+            rows: overviews.length,
+            courses: scan.counts.courses,
+            planLabels: scan.counts.planLabels != null ? scan.counts.planLabels : 0
+        });
         const decision = templateReviewDecision(
             resolveReviewSite(detectPatientSite(), plans),
-            contexts
+            match.contexts
         );
 
         if (decision.action === 'ok') return 'ok';

@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.45', /@version\s+3\.45\b/.test(src));
-ok('no leftover 3.44', !/\b3\.44\b/.test(src));
+ok('@version 3.46', /@version\s+3\.46\b/.test(src));
+ok('no leftover 3.45', !/\b3\.45\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('SBRT gray-out still uses the page-wide first fraction read', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTotalFractions\(\);/.test(src));
@@ -19,7 +19,7 @@ ok('Review matches each unselected plan to its own overview table', src.includes
 const ensureStart = src.indexOf('    async function ensureReviewTemplates(');
 const ensureEnd = src.indexOf('    // ============================================================\n    // Patient Navigation');
 const ensureSrc = ensureStart >= 0 && ensureEnd > ensureStart ? src.slice(ensureStart, ensureEnd) : '';
-ok('ensureReviewTemplates does not use a single page-wide fraction total', /resolvePlanTemplateContexts\([\s\S]*?templateReviewDecision\(/.test(ensureSrc) && !ensureSrc.includes('readTotalFractions()'));
+ok('ensureReviewTemplates does not use a single page-wide fraction total', /resolvePlanTemplateMatch\([\s\S]*?templateReviewDecision\(/.test(ensureSrc) && !ensureSrc.includes('readTotalFractions()'));
 
 ok('unselected plans use a red background and/or an OAK_ default', src.includes('function isOakTemplateDefault(') && src.includes('function hasRedTemplateBackground(') && src.includes('isOakTemplateDefault(text) || hasRedTemplateBackground(select)'));
 ok('already-selected ROS_/RCO_ templates are never treated as unselected', /function isTemplateSelectUnselected\([\s\S]*?if \(isValidSiteTemplate\(text\)\) return false;/.test(src));

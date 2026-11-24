@@ -10,12 +10,12 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.45', /@version\s+3\.45\b/.test(src));
-ok('no leftover 3.44', !/\b3\.44\b/.test(src));
+ok('@version 3.46', /@version\s+3\.46\b/.test(src));
+ok('no leftover 3.45', !/\b3\.45\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('document-order scan is used to pair selects with preceding labels', src.includes('function scanTemplateMatchPage(') && src.includes('function nearestPrecedingLabel(') && src.includes('function walkElementsInOrder('));
-ok('equal select and block counts map by document-order index', src.includes('list.length === tables.length') && src.includes('scan.overviews'));
-ok('tooltip reason can include non-PHI counts', src.includes('function formatReviewReason(') && src.includes(" + ' sel=' + sel"));
+ok('equal select and block counts map by document-order index', src.includes('list.length === rows.length') && src.includes('scan.overviews'));
+ok('tooltip reason can include non-PHI counts', src.includes('function formatReviewReason(') && src.includes(" + ' sel=' + countValue('sel')") && src.includes(" + ' unsel=' + countValue('unsel')"));
 ok('SBRT gray-out still uses the page-wide first fraction read', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTotalFractions\(\);/.test(src));
 
 const helperStart = src.indexOf('    function isValidSiteTemplate(');
@@ -46,7 +46,7 @@ const flatTree = [
 ok('flat sibling document order uses the nearest preceding course', helpers.nearestPrecedingLabel(4, flatTree) === 'C2- Beta extra note');
 ok('the first select uses only the course that precedes it', helpers.nearestPrecedingLabel(2, flatTree) === 'C1- Alpha');
 
-ok('tooltip keeps Template needed short and adds counts only', helpers.formatReviewReason('match?', { sel: 2, blocks: 2, courses: 2 }) === 'match? sel=2 blocks=2 courses=2');
+ok('tooltip keeps Template needed short and adds counts only', helpers.formatReviewReason('match?', { sel: 2, unsel: 1, blocks: 2, rows: 2, courses: 2, planLabels: 2, matched: 0, fail: 'name,course,index' }) === 'match? sel=2 unsel=1 blocks=2 rows=2 courses=2 planLabels=2 matched=0 fail=name,course,index');
 
 function filled(course, plan) {
     return { filled: true, unselected: false, courseName: course, planName: plan, text: 'ROS_SBRT/SRS' };
