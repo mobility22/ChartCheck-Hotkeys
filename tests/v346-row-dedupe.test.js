@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.46', /@version\s+3\.46\b/.test(src));
-ok('no leftover 3.45', !/\b3\.45\b/.test(src));
+ok('@version 3.47', /@version\s+3\.47\b/.test(src));
+ok('no leftover 3.46', !/\b3\.46\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('overview blocks are deduped and expanded into plan rows', src.includes('function dedupeOverviewBlocks(') && src.includes('function extractPlanRowsFromCells(') && src.includes('function resolvePlanTemplateMatch('));
 ok('tooltip counts include unsel, rows, planLabels, matched, and fail stages', src.includes(" + ' unsel=' + countValue('unsel')") && src.includes(" + ' rows=' + countValue('rows')") && src.includes(" + ' planLabels=' + countValue('planLabels')") && src.includes(" + ' matched=' + countValue('matched')") && src.includes("text += ' fail=' +"));
@@ -161,8 +161,8 @@ const tooltip = helpers.formatReviewReason('match?', {
     matched: 0,
     fail: 'name,course,index'
 });
-ok('tooltip shows count-only match stats and failed stages', tooltip === 'match? sel=8 unsel=1 blocks=8 rows=8 courses=2 planLabels=8 matched=0 fail=name,course,index');
-ok('tooltip omits fail when matching succeeded', helpers.formatReviewReason('prompt?', { sel: 8, unsel: 1, blocks: 8, rows: 8, courses: 2, planLabels: 8, matched: 1 }) === 'prompt? sel=8 unsel=1 blocks=8 rows=8 courses=2 planLabels=8 matched=1');
+ok('tooltip shows count-only match stats and failed stages', tooltip === 'match? sel=8 unsel=1 blocks=8 rows=8 courses=2 planLabels=8 matched=0 near=0 fail=name,course,index');
+ok('tooltip omits fail when matching succeeded', helpers.formatReviewReason('prompt?', { sel: 8, unsel: 1, blocks: 8, rows: 8, courses: 2, planLabels: 8, matched: 1 }) === 'prompt? sel=8 unsel=1 blocks=8 rows=8 courses=2 planLabels=8 matched=1 near=0');
 
 if (failed) {
     process.exitCode = 1;
