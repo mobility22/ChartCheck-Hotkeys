@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.48
+// @version      3.49
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -3824,6 +3824,42 @@
         return totalFractions != null && totalFractions > 5;
     }
 
+    // Use unselected-plan fx for SBRT/Standard gray-out.
+    // Enable SBRT if any unselected plan has fx<=5, or if fx is
+    // unknown. Mute SBRT only when every unselected plan has a
+    // known total greater than 5. Standard is never muted by fx.
+    function sbrtGrayFractionsFromUnselected(planStates) {
+        const totals = [];
+
+        (planStates || []).forEach(state => {
+            if (!state || state.filled || state.unselected === false) return;
+
+            const fx = state.totalFractions;
+
+            if (
+                state.tableFound
+                && fx != null
+                && Number.isFinite(fx)
+                && fx > 0
+            ) {
+                totals.push(fx);
+            } else {
+                totals.push(null);
+            }
+        });
+
+        if (!totals.length) return null;
+
+        const known = totals.filter(value => value != null);
+        const shortCourse = known.filter(value => value <= 5);
+
+        if (shortCourse.length) return Math.min.apply(null, shortCourse);
+        if (known.length < totals.length) return null;
+        if (!known.length) return null;
+
+        return known[0];
+    }
+
     function isSiteTemplateMuted(site, totalFractions, sitePair, isSbrt) {
         if (!sitePair) return false;
 
@@ -3848,10 +3884,26 @@
         return false;
     }
 
+    function readTemplateGrayFractions() {
+        const selects = getTemplateSelects();
+
+        if (!selects.length) return null;
+
+        const scan = scanTemplateMatchPage(selects);
+        const plans = selects.map(select => describeTemplateSelect(select, scan));
+        const overviews = mergeOverviewPlanRows(scan.overviews, findOverviewPlanRecords());
+        const tableCount = new Set(overviews.map(row => row && row.table).filter(Boolean)).size;
+        const match = resolvePlanTemplateMatch(plans, overviews, {
+            blocks: tableCount || (scan.counts.blocks != null ? scan.counts.blocks : 0)
+        });
+
+        return sbrtGrayFractionsFromUnselected(match.contexts);
+    }
+
     function isTemplateHotkeyMuted(sitePair, isSbrt) {
         return isSiteTemplateMuted(
             detectPatientSite(),
-            readTotalFractions(),
+            readTemplateGrayFractions(),
             sitePair,
             isSbrt
         );
@@ -5372,7 +5424,7 @@
         if (panel) panel.dataset.patientSite = site;
         if (!helpList) return;
 
-        const totalFractions = readTotalFractions();
+        const totalFractions = readTemplateGrayFractions();
 
         helpList.querySelectorAll('.chartcheck-help-row').forEach(row => {
             const pair = row.dataset.sitePair || '';

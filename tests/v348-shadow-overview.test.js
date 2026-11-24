@@ -10,15 +10,15 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.48', /@version\s+3\.48\b/.test(src));
-ok('no leftover 3.47', !/\b3\.47\b/.test(src));
+ok('@version 3.49', /@version\s+3\.49\b/.test(src));
+ok('no leftover 3.48', !/\b3\.48\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('overview tables are read from composed shadow trees', src.includes('function walkComposedTree(') && src.includes('function collectOverviewRowsFromRoot(') && src.includes('function readPlanRowsFromOverviewTable('));
 ok('3.46 row detection remains as a fallback', src.includes('function findOverviewPlanRecordsLegacy('));
 ok('fraction labels match after whitespace and nbsp normalization', src.includes('function fractionsLabelNorm(') && src.includes("value.startsWith('delivered/total fractions')"));
 ok('collectDeepText walks shadow roots', src.includes('if (node.nodeType === 11)') && src.includes("if (tag === 'br')"));
 ok('pairing still reports fx? when a row is found without a total', /if \(!knownFx\) \{\s*shouldStop = true;\s*if \(!reason\) reason = 'fx\?';/.test(src));
-ok('SBRT gray-out still uses the page-wide first fraction read', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTotalFractions\(\);/.test(src));
+ok('SBRT gray-out uses unselected-plan fractions', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTemplateGrayFractions\(\);/.test(src));
 ok('tooltip counts still include rows and near', src.includes(" + ' rows=' + countValue('rows')") && src.includes(" + ' near=' + countValue('near')"));
 
 const helperStart = src.indexOf('    function isValidSiteTemplate(');

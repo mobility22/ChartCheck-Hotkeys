@@ -20,8 +20,8 @@ function extract(label, start, end) {
     return src.slice(a, b);
 }
 
-ok('@version 3.48', /@version\s+3\.48\b/.test(src));
-ok('no leftover 3.47', !/\b3\.47\b/.test(src));
+ok('@version 3.49', /@version\s+3\.49\b/.test(src));
+ok('no leftover 3.48', !/\b3\.48\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('loaded log uses SCRIPT_VERSION', src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION} Loaded') || src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION}'));
 ok('grants GM_getValue', /@grant\s+GM_getValue/.test(src));
