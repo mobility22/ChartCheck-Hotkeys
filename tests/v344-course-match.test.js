@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.47', /@version\s+3\.47\b/.test(src));
-ok('no leftover 3.46', !/\b3\.46\b/.test(src));
+ok('@version 3.48', /@version\s+3\.48\b/.test(src));
+ok('no leftover 3.47', !/\b3\.47\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('visible stop text is still only Template needed', /setReviewNote\('Template needed'/.test(src) && !src.includes("'Template needed: checks not ready, pick manually'"));
 ok('stop reason is stored on the status note title', /note\.title = value \+ ' \(' \+ detail \+ '\)'/.test(src) && /pointer-events:\s*auto;/.test(src));
