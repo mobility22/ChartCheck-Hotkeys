@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.44', /@version\s+3\.44\b/.test(src));
-ok('no leftover 3.43', !/\b3\.43\b/.test(src));
+ok('@version 3.45', /@version\s+3\.45\b/.test(src));
+ok('no leftover 3.44', !/\b3\.44\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('Quick Review / NS Review / Slow review actions are gone', !src.includes("name: 'Quick Review'") && !src.includes("name: 'NS Review'") && !src.includes("name: 'Slow review'"));
