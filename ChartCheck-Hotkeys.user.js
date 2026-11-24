@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.43
+// @version      3.44
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -125,7 +125,7 @@
         ranchoEl.textContent = String(ranchoReviewCount);
     }
 
-    function setReviewNote(text) {
+    function setReviewNote(text, reason) {
         if (!statusEl) return;
 
         const note = statusEl.querySelector('.chartcheck-review-note');
@@ -136,6 +136,16 @@
 
         note.textContent = value;
         note.classList.toggle('chartcheck-review-note-on', !!value);
+
+        const detail = reason == null ? '' : String(reason).trim();
+
+        if (value && detail) {
+            note.title = value + ' (' + detail + ')';
+            note.setAttribute('title', note.title);
+        } else {
+            note.title = '';
+            note.removeAttribute('title');
+        }
     }
 
     function buildStatusContent(status) {
@@ -698,12 +708,25 @@
         return match ? normalizeText(match[1]) : '';
     }
 
+    function parseCourseLabel(text) {
+        const value = normalizeText(text);
+
+        if (!value || value.length > 200) return '';
+
+        const match = /^course:\s*(.+)$/i.exec(value);
+
+        return match ? normalizeText(match[1]) : '';
+    }
+
     function normalizePlanName(name) {
-        const value = normalizeText(name);
+        let value = normalizeText(name);
 
         if (!value) return '';
 
-        return value.replace(/^plan:\s*/i, '').replace(/\s+/g, ' ').trim().toLowerCase();
+        value = value.replace(/^plan\s*name\s*[:.\-]?\s*/i, '');
+        value = value.replace(/^plan:\s*/i, '');
+
+        return value.replace(/\s+/g, ' ').trim().toLowerCase();
     }
 
     function planNamesMatch(left, right) {
@@ -713,14 +736,55 @@
         return !!a && !!b && a === b;
     }
 
+    function normalizeCourseKey(name) {
+        const value = normalizeText(name).replace(/^course:\s*/i, '');
+
+        if (!value) return '';
+
+        return value.replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    function courseKeysMatch(left, right) {
+        const a = normalizeCourseKey(left);
+        const b = normalizeCourseKey(right);
+
+        if (!a || !b) return false;
+        if (a === b) return true;
+
+        const compact = value => value.replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ');
+
+        return compact(a) === compact(b);
+    }
+
     function isPlanNameLabel(text) {
         const value = normalizeText(text).toLowerCase().replace(/:$/, '');
 
         return value === 'plan name';
     }
 
+    function planNameFromLabeledText(text) {
+        const value = normalizeText(text);
+        const match = /^plan\s*name\s*[:.\-]?\s+(.+)$/i.exec(value);
+
+        if (!match) return '';
+
+        const name = normalizeText(match[1]);
+
+        if (!name || isPlanNameLabel(name)) return '';
+        if (isDeliveredTotalFractionsLabel(name)) return '';
+        if (isOverviewFieldLabel(name)) return '';
+
+        return name;
+    }
+
     function readPlanNameFromCells(cells) {
         if (!cells || !cells.length) return '';
+
+        for (let i = 0; i < cells.length; i++) {
+            const fromSame = planNameFromLabeledText(cells[i]);
+
+            if (fromSame) return fromSame;
+        }
 
         for (let i = 0; i < cells.length; i++) {
             if (!isPlanNameLabel(cells[i])) continue;
@@ -730,6 +794,7 @@
 
                 if (!next) continue;
                 if (isPlanNameLabel(next)) break;
+                if (planNameFromLabeledText(cells[j])) continue;
                 if (isDeliveredTotalFractionsLabel(next)) break;
                 if (isOverviewFieldLabel(next)) break;
 
@@ -740,15 +805,95 @@
         return '';
     }
 
-    // Match each template dropdown to its own Plan Overview table
-    // by plan name (tree "Plan: X" vs the table "Plan name" cell),
-    // or by document order when a name is missing. Filled plans are
-    // left untouched and are not used for the fraction decision.
+    function inferPatientSiteFromTemplates(selectedTexts, optionLists) {
+        const selected = Array.isArray(selectedTexts) ? selectedTexts : [];
+
+        for (let i = 0; i < selected.length; i++) {
+            const text = selected[i] || '';
+
+            if (/^ROS_/i.test(text)) return 'roseville';
+            if (/^RCO_/i.test(text)) return 'rancho';
+        }
+
+        const lists = Array.isArray(optionLists) ? optionLists : [];
+
+        for (let i = 0; i < lists.length; i++) {
+            const options = Array.isArray(lists[i]) ? lists[i] : [];
+            const hasRos = options.some(text => /^ROS_/i.test(text || ''));
+            const hasRco = options.some(text => /^RCO_/i.test(text || ''));
+
+            if (hasRos && !hasRco) return 'roseville';
+            if (hasRco && !hasRos) return 'rancho';
+        }
+
+        return 'unknown';
+    }
+
+    function resolveReviewSite(detected, plans) {
+        if (detected === 'roseville' || detected === 'rancho') {
+            return detected;
+        }
+
+        const list = Array.isArray(plans) ? plans : [];
+
+        return inferPatientSiteFromTemplates(
+            list.map(plan => plan && plan.text),
+            list.map(plan => plan && plan.optionTexts)
+        );
+    }
+
+    // Match an unselected template dropdown to its overview table:
+    // course title first (tree "Course: X" vs the main-area section
+    // heading), then plan name (tree "Plan: X" vs the table "Plan
+    // name" header), then document order, then process of
+    // elimination when only one unselected plan and one table
+    // remain. Filled plans are left untouched.
     function resolvePlanTemplateContexts(plans, overviews) {
         const list = Array.isArray(plans) ? plans : [];
         const tables = Array.isArray(overviews) ? overviews : [];
+        const used = new Set();
 
-        return list.map((plan, index) => {
+        function claim(table) {
+            if (!table) return null;
+
+            const index = tables.indexOf(table);
+
+            if (index >= 0) used.add(index);
+
+            return table;
+        }
+
+        function matchTable(plan, index) {
+            const courseName = plan && plan.courseName ? plan.courseName : '';
+            const planName = plan && plan.planName ? plan.planName : '';
+
+            if (courseName) {
+                const hits = tables.filter(item => courseKeysMatch(item && item.courseName, courseName));
+
+                if (hits.length === 1) return claim(hits[0]);
+            }
+
+            if (planName) {
+                const hits = tables.filter(item => planNamesMatch(item && item.planName, planName));
+
+                if (hits.length === 1) return claim(hits[0]);
+            }
+
+            const byOrder = tables[index] || null;
+
+            if (byOrder && !used.has(index)) {
+                const orderCourse = byOrder.courseName;
+                const orderName = byOrder.planName;
+                const courseOk = !courseName || !normalizeCourseKey(orderCourse) || courseKeysMatch(orderCourse, courseName);
+                const nameOk = !planName || !normalizePlanName(orderName) || planNamesMatch(orderName, planName);
+
+                if (courseOk && nameOk) return claim(byOrder);
+            }
+
+            return null;
+        }
+
+        const result = list.map((plan, index) => {
             if (plan && plan.filled) {
                 return {
                     filled: true,
@@ -759,21 +904,6 @@
             }
 
             const unselected = !plan || plan.unselected !== false;
-            const planName = plan && plan.planName ? plan.planName : '';
-            let table = null;
-
-            if (planName) {
-                table = tables.find(item => planNamesMatch(item && item.planName, planName)) || null;
-            }
-
-            if (!table) {
-                const byOrder = tables[index] || null;
-                const orderName = byOrder && byOrder.planName;
-
-                if (!planName || !normalizePlanName(orderName)) {
-                    table = byOrder;
-                }
-            }
 
             if (!unselected) {
                 return {
@@ -783,6 +913,8 @@
                     totalFractions: null
                 };
             }
+
+            const table = matchTable(plan, index);
 
             if (!table) {
                 return {
@@ -800,6 +932,55 @@
                 totalFractions: table.totalFractions
             };
         });
+
+        const unmatched = [];
+
+        result.forEach((state, index) => {
+            if (state && !state.filled && state.unselected !== false && !state.tableFound) {
+                unmatched.push(index);
+            }
+        });
+
+        const unused = [];
+
+        tables.forEach((table, index) => {
+            if (!used.has(index)) unused.push(table);
+        });
+
+        const unselectedCount = list.filter(plan => plan && !plan.filled && plan.unselected !== false).length;
+
+        const filledCount = list.filter(plan => plan && plan.filled).length;
+
+        if (unmatched.length === 1 && unused.length === 1 && used.size > 0) {
+            const index = unmatched[0];
+            const table = unused[0];
+
+            claim(table);
+            result[index] = {
+                filled: false,
+                unselected: true,
+                tableFound: true,
+                totalFractions: table.totalFractions
+            };
+        } else if (
+            unmatched.length === 1
+            && tables.length === 1
+            && unselectedCount === 1
+            && filledCount === 0
+        ) {
+            const index = unmatched[0];
+            const table = tables[0];
+
+            claim(table);
+            result[index] = {
+                filled: false,
+                unselected: true,
+                tableFound: true,
+                totalFractions: table.totalFractions
+            };
+        }
+
+        return result;
     }
 
     // Decide what Review should do for unselected plans only.
@@ -814,6 +995,7 @@
         const autoIndexes = [];
         let pending = false;
         let shouldStop = false;
+        let reason = '';
 
         states.forEach((state, index) => {
             if (!state || state.filled) return;
@@ -822,17 +1004,30 @@
 
             if (state.unselected === false) {
                 shouldStop = true;
+                if (!reason) reason = 'match?';
+                return;
+            }
+
+            if (!state.tableFound) {
+                shouldStop = true;
+                if (!reason) reason = 'match?';
                 return;
             }
 
             const totalFractions = state.totalFractions;
-            const knownFx = state.tableFound
-                && totalFractions != null
+            const knownFx = totalFractions != null
                 && Number.isFinite(totalFractions)
                 && totalFractions > 0;
 
-            if (!knownFx || totalFractions <= 5) {
+            if (!knownFx) {
                 shouldStop = true;
+                if (!reason) reason = 'fx?';
+                return;
+            }
+
+            if (totalFractions <= 5) {
+                shouldStop = true;
+                if (!reason) reason = 'fx<=5';
                 return;
             }
 
@@ -845,10 +1040,19 @@
 
         const knownSite = site === 'roseville' || site === 'rancho';
 
-        if (!knownSite || shouldStop) {
+        if (!knownSite) {
             return {
                 action: 'stop',
-                message: 'Template needed'
+                message: 'Template needed',
+                reason: 'site?'
+            };
+        }
+
+        if (shouldStop) {
+            return {
+                action: 'stop',
+                message: 'Template needed',
+                reason
             };
         }
 
@@ -1027,14 +1231,81 @@
         return '';
     }
 
+    function collectCourseLabels(root) {
+        const names = [];
+
+        if (!root) return names;
+
+        const directText = collectDeepText(root);
+        const direct = parseCourseLabel(directText);
+
+        if (direct && isInnermostDeepText(root, directText)) {
+            names.push(direct);
+            return names;
+        }
+
+        walkDom(root, el => {
+            if (!el.tagName) return;
+
+            const text = collectDeepText(el);
+            const name = parseCourseLabel(text);
+
+            if (name && isInnermostDeepText(el, text)) {
+                names.push(name);
+            }
+        });
+
+        return names;
+    }
+
+    function findCourseLabelNearSelect(select) {
+        let node = select;
+
+        for (let i = 0; i < 14 && node && node !== document; i++) {
+            let sib = node.previousElementSibling;
+
+            while (sib) {
+                const names = collectCourseLabels(sib);
+
+                if (names.length === 1) return names[0];
+
+                sib = sib.previousElementSibling;
+            }
+
+            const own = collectCourseLabels(node);
+
+            if (own.length === 1) return own[0];
+
+            const parent = node.parentElement;
+            let next = parent;
+
+            if (!next && typeof node.getRootNode === 'function') {
+                const root = node.getRootNode();
+
+                next = root && root.host ? root.host : null;
+            }
+
+            node = next;
+        }
+
+        return '';
+    }
+
     function readOverviewRecordFromFractionsLabel(label) {
         const rowTexts = rowCellTextsFromLabel(label);
         let totalFractions = rowTexts ? readTotalFractionsFromCells(rowTexts) : null;
         let planName = '';
+        let courseName = '';
         let node = label;
 
-        for (let i = 0; i < 12 && node; i++) {
+        for (let i = 0; i < 16 && node; i++) {
             if (node !== label && countInnermostFractionsLabels(node) > 1) {
+                break;
+            }
+
+            const courseNames = collectCourseLabels(node);
+
+            if (node !== label && courseNames.length > 1) {
                 break;
             }
 
@@ -1043,12 +1314,15 @@
             collectOverviewCells(node, cells);
 
             if (!planName) planName = readPlanNameFromCells(cells);
+            if (!courseName && courseNames.length === 1) {
+                courseName = courseNames[0];
+            }
             if (totalFractions == null) {
                 totalFractions = readTotalFractionsFromCells(cells);
             }
 
-            if (planName && totalFractions != null) {
-                return { planName, totalFractions };
+            if ((planName || courseName) && totalFractions != null) {
+                return { courseName, planName, totalFractions };
             }
 
             const parent = node.parentElement;
@@ -1065,9 +1339,9 @@
             node = next;
         }
 
-        if (totalFractions == null && !planName) return null;
+        if (totalFractions == null && !planName && !courseName) return null;
 
-        return { planName, totalFractions };
+        return { courseName, planName, totalFractions };
     }
 
     function findOverviewPlanRecords() {
@@ -1110,7 +1384,11 @@
             text,
             filled,
             unselected,
-            planName: findPlanNameNearSelect(select)
+            planName: findPlanNameNearSelect(select),
+            courseName: findCourseLabelNearSelect(select),
+            optionTexts: Array.from(select.options || []).map(option => (
+                option && option.text ? String(option.text).trim() : ''
+            ))
         };
     }
 
@@ -1118,21 +1396,21 @@
         const selects = getTemplateSelects();
 
         if (selects.length === 0 && checksNeedTemplatePrompt()) {
-            setReviewNote('Template needed');
+            setReviewNote('Template needed', 'prompt?');
             return 'stop';
         }
 
         const plans = selects.map(describeTemplateSelect);
         const contexts = resolvePlanTemplateContexts(plans, findOverviewPlanRecords());
         const decision = templateReviewDecision(
-            detectPatientSite(),
+            resolveReviewSite(detectPatientSite(), plans),
             contexts
         );
 
         if (decision.action === 'ok') return 'ok';
 
         if (decision.action === 'stop') {
-            setReviewNote(decision.message);
+            setReviewNote(decision.message, decision.reason);
             return 'stop';
         }
 
@@ -1143,7 +1421,7 @@
         const applied = await applyTemplateAndWait(decision.templateName, targets);
 
         if (!applied) {
-            setReviewNote('Template needed: checks not ready, pick manually');
+            setReviewNote('Template needed', 'checks?');
             return 'stop';
         }
 
@@ -2803,6 +3081,7 @@
 
             #chartcheck-panel .chartcheck-review-note.chartcheck-review-note-on {
                 display: block;
+                pointer-events: auto;
             }
 
             #chartcheck-panel .chartcheck-rancho-line {

@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.43', /@version\s+3\.43\b/.test(src));
-ok('no leftover 3.42', !/\b3\.42\b/.test(src));
+ok('@version 3.44', /@version\s+3\.44\b/.test(src));
+ok('no leftover 3.43', !/\b3\.43\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('SBRT gray-out still uses the page-wide first fraction read', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTotalFractions\(\);/.test(src));
@@ -106,7 +106,10 @@ ok('missing overview table for an unselected plan stops Review', missingTable[1]
 
 const nameMismatch = helpers.resolvePlanTemplateContexts(
     [unselectedPlan('PlanB')],
-    [{ planName: 'PlanA', totalFractions: 17 }]
+    [
+        { planName: 'PlanA', totalFractions: 3 },
+        { planName: 'PlanC', totalFractions: 17 }
+    ]
 );
 ok('a plan name that does not match any table stops Review', nameMismatch[0].tableFound === false && helpers.templateReviewDecision('roseville', nameMismatch).action === 'stop');
 

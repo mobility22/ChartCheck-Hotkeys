@@ -10,7 +10,7 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.43', /@version\s+3\.43\b/.test(src));
+ok('@version 3.44', /@version\s+3\.44\b/.test(src));
 ok('reload uses location.reload', /function tryAutoReload\([\s\S]*?location\.reload\(\)/.test(src));
 ok('initial delay is 5 minutes', src.includes('const AUTO_RELOAD_MS = 5 * 60 * 1000'));
 ok('retry delay is 1 minute', src.includes('const AUTO_RELOAD_RETRY_MS = 60 * 1000'));
