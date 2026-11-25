@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.55', /@version\s+3\.55\b/.test(src));
-ok('no leftover 3.54', !/\b3\.54\b/.test(src));
+ok('@version 3.56', /@version\s+3\.56\b/.test(src));
+ok('no leftover 3.55', !/\b3\.55\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('v3.34 debug status names stay gone', !src.includes('chartcheck-template-status') && !src.includes('templateStatus') && !src.includes('updateTemplateStatusLine') && !src.includes('formatTemplateStatus') && !src.includes('siteStatusCode'));

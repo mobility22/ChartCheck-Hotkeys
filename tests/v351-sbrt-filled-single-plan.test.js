@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.55', /@version\s+3\.55\b/.test(src));
-ok('no leftover 3.54', !/\b3\.54\b/.test(src));
+ok('@version 3.56', /@version\s+3\.56\b/.test(src));
+ok('no leftover 3.55', !/\b3\.55\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('filled-plan contexts now keep the matched row fractions', /if \(plan && plan\.filled\) \{\s*return \{\s*filled: true,\s*unselected: false,\s*tableFound: !!row,/.test(src));
 ok('a single plan can use the only overview row', src.includes('A single plan can use the only overview row') && src.includes('function sbrtGrayFractionsWithFallback('));

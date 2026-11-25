@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.55', /@version\s+3\.55\b/.test(src));
-ok('no leftover 3.54', !/\b3\.54\b/.test(src));
+ok('@version 3.56', /@version\s+3\.56\b/.test(src));
+ok('no leftover 3.55', !/\b3\.55\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('overview blocks are deduped and expanded into plan rows', src.includes('function dedupeOverviewBlocks(') && src.includes('function extractPlanRowsFromCells(') && src.includes('function resolvePlanTemplateMatch('));
 ok('tooltip counts include unsel, rows, planLabels, matched, and fail stages', src.includes(" + ' unsel=' + countValue('unsel')") && src.includes(" + ' rows=' + countValue('rows')") && src.includes(" + ' planLabels=' + countValue('planLabels')") && src.includes(" + ' matched=' + countValue('matched')") && src.includes("text += ' fail=' +"));
