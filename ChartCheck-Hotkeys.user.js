@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.55
+// @version      3.56
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -6202,22 +6202,14 @@
             } catch (err) {}
         }
 
-        return href
-            + '
-'
-            + patientId
-            + '
-'
-            + grayFractionSelectSignature(selects)
-            + '
-'
-            + String(selects.length)
-            + '
-'
-            + cheapOverviewTextSignature()
-            + '
-'
-            + center;
+        return [
+            href,
+            patientId,
+            grayFractionSelectSignature(selects),
+            String(selects.length),
+            cheapOverviewTextSignature(),
+            center
+        ].join('\n');
     }
 
     function refreshPatientSiteGray() {
