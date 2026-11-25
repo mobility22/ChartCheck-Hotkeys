@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.54
+// @version      3.55
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -63,6 +63,8 @@
     }
 
     function walkDom(root, callback) {
+        if (!root || !root.querySelectorAll) return;
+
         for (const el of root.querySelectorAll('*')) {
             callback(el);
 
@@ -70,6 +72,81 @@
                 walkDom(el.shadowRoot, callback);
             }
         }
+    }
+
+    // Short-lived caches and targeted composed queries so the 800ms
+    // refresh and MutationObserver do not walk the whole document
+    // when nothing relevant has changed.
+    let pageScanDirty = true;
+    let cachedPatientsSidebar = null;
+    let cachedOverviewDocs = null;
+    let cachedTemplateSelects = null;
+    let cachedCenterLineEl = null;
+    let cachedIdleSignature = '';
+    let lastAppliedSite = null;
+    let lastSiteFrameKey = '';
+
+    function markPageScanDirty() {
+        pageScanDirty = true;
+        cachedOverviewDocs = null;
+        cachedTemplateSelects = null;
+
+        if (cachedPatientsSidebar && cachedPatientsSidebar.isConnected === false) {
+            cachedPatientsSidebar = null;
+        }
+
+        if (cachedCenterLineEl && cachedCenterLineEl.isConnected === false) {
+            cachedCenterLineEl = null;
+        }
+    }
+
+    function isConnectedNode(node) {
+        return !!node && node.isConnected !== false;
+    }
+
+    function isOwnPanelNode(el) {
+        if (!el) return false;
+        if (el.id === 'chartcheck-panel' || el.id === 'chartcheck-dom-copy') return true;
+
+        try {
+            if (typeof el.closest === 'function') {
+                return !!(el.closest('#chartcheck-panel') || el.closest('#chartcheck-dom-copy'));
+            }
+        } catch (err) {}
+
+        return false;
+    }
+
+    function forEachShadowRoot(root, visit) {
+        if (!root || !root.querySelectorAll) return;
+
+        const all = root.querySelectorAll('*');
+
+        for (let i = 0; i < all.length; i++) {
+            const el = all[i];
+
+            if (isOwnPanelNode(el)) continue;
+
+            if (el.shadowRoot) {
+                visit(el.shadowRoot);
+                forEachShadowRoot(el.shadowRoot, visit);
+            }
+        }
+    }
+
+    function collectDeepByQuery(root, selector, results) {
+        const list = results || [];
+
+        if (!root || !selector || !root.querySelectorAll) return list;
+
+        list.push.apply(list, root.querySelectorAll(selector));
+        forEachShadowRoot(root, shadow => {
+            if (shadow.querySelectorAll) {
+                list.push.apply(list, shadow.querySelectorAll(selector));
+            }
+        });
+
+        return list;
     }
 
     // ============================================================
@@ -366,45 +443,32 @@
     }
 
     function findButtons(root = document) {
-        const results = [];
-
-        results.push(...root.querySelectorAll('button'));
-
-        walkDom(root, el => {
-            if (el.shadowRoot) {
-                results.push(...findButtons(el.shadowRoot));
-            }
-        });
-
-        return results;
+        return collectDeepByQuery(root, 'button', []);
     }
 
     function findSelects(root = document) {
-        const results = [];
-
-        results.push(...root.querySelectorAll('select'));
-
-        walkDom(root, el => {
-            if (el.shadowRoot) {
-                results.push(...findSelects(el.shadowRoot));
-            }
-        });
-
-        return results;
+        return collectDeepByQuery(root, 'select', []);
     }
 
     function findPatientsSidebar(root = document) {
+        const scope = root || document;
+
+        if (scope === document && isConnectedNode(cachedPatientsSidebar)) {
+            return cachedPatientsSidebar;
+        }
+
         let found = null;
 
-        walkDom(root, el => {
-            if (
-                !found &&
-                el.tagName &&
-                el.tagName.toLowerCase() === 'patients-sidebar'
-            ) {
-                found = el;
-            }
-        });
+        if (scope.querySelector) {
+            found = scope.querySelector('patients-sidebar');
+        }
+
+        if (!found) {
+            const matches = collectDeepByQuery(scope, 'patients-sidebar', []);
+            found = matches.length ? matches[0] : null;
+        }
+
+        if (scope === document) cachedPatientsSidebar = found;
 
         return found;
     }
@@ -526,16 +590,18 @@
         try {
             if (select.hidden) return false;
 
-            if (
-                select.offsetWidth === 0
-                && select.offsetHeight === 0
-                && typeof select.getBoundingClientRect === 'function'
-            ) {
+            const wide = select.offsetWidth || 0;
+            const tall = select.offsetHeight || 0;
+
+            // Already on screen: skip getComputedStyle to avoid layout work
+            // on every refresh.
+            if (wide > 0 || tall > 0) return true;
+
+            if (typeof select.getBoundingClientRect === 'function') {
                 const rect = select.getBoundingClientRect();
 
-                if (rect && rect.width === 0 && rect.height === 0) {
-                    return false;
-                }
+                if (rect && (rect.width > 0 || rect.height > 0)) return true;
+                if (rect && rect.width === 0 && rect.height === 0) return false;
             }
 
             if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
@@ -616,12 +682,21 @@
     }
 
     function getTemplateSelects() {
+        if (
+            !pageScanDirty
+            && cachedTemplateSelects
+            && cachedTemplateSelects.every(isConnectedNode)
+        ) {
+            return filterCheckTemplateSelects(cachedTemplateSelects);
+        }
+
         const found = [];
 
         overviewDocuments().forEach(doc => {
             found.push.apply(found, findSelects(doc));
         });
 
+        cachedTemplateSelects = found;
         return filterCheckTemplateSelects(found);
     }
 
@@ -3447,12 +3522,13 @@
             awaitingFreshBanner = !!previousIdentity;
         }
 
-        const obs = bannerObservation();
-
+        // Already copied this patient and the banner does not need
+        // to change: skip the heading / center-line document walk.
         if (copiedIdentity === identity && !awaitingFreshBanner) {
-            settledObservation = obs;
             return;
         }
+
+        const obs = bannerObservation();
 
         if (awaitingFreshBanner && sameObservation(obs, baselineObservation)) {
             return;
@@ -3569,29 +3645,88 @@
         return best;
     }
 
+    function isSmallTextCandidate(el) {
+        if (!el || !el.tagName) return false;
+
+        try {
+            if (el.childElementCount > 12) return false;
+            if (el.getElementsByTagName && el.getElementsByTagName('*').length > 32) {
+                return false;
+            }
+        } catch (err) {}
+
+        return true;
+    }
+
+    function considerCenterLineElement(el, matches) {
+        if (!el || !el.tagName) return;
+
+        const tag = el.tagName.toLowerCase();
+
+        if (tag === 'script' || tag === 'style' || tag === 'noscript') return;
+        if (tag === 'patients-sidebar' || isOwnPanelNode(el)) return;
+
+        try {
+            if (typeof el.closest === 'function' && el.closest('patients-sidebar')) {
+                return;
+            }
+        } catch (err) {}
+
+        if (isInPatientsSidebar(el) || isInHotkeyPanel(el)) return;
+        if (!isSmallTextCandidate(el)) return;
+
+        const text = normalizeText(el.textContent);
+
+        if (text.length > 240 || !isCenterLine(text)) return;
+
+        for (const child of el.children) {
+            if (isCenterLine(child.textContent)) return;
+        }
+
+        matches.push(el);
+    }
+
     function findCenterLineElements() {
         const matches = [];
 
-        walkDom(document, el => {
-            if (!el.tagName || isInPatientsSidebar(el) || isInHotkeyPanel(el)) {
-                return;
+        function walk(root) {
+            if (!root || !root.querySelectorAll) return;
+
+            const all = root.querySelectorAll('*');
+
+            for (let i = 0; i < all.length; i++) {
+                const el = all[i];
+                const tag = (el.tagName || '').toLowerCase();
+
+                if (tag === 'patients-sidebar' || isOwnPanelNode(el)) continue;
+
+                try {
+                    if (typeof el.closest === 'function' && el.closest('patients-sidebar')) {
+                        continue;
+                    }
+                } catch (err) {}
+
+                considerCenterLineElement(el, matches);
+
+                if (el.shadowRoot) walk(el.shadowRoot);
             }
+        }
 
-            const text = normalizeText(el.textContent);
-
-            if (text.length > 240 || !isCenterLine(text)) return;
-
-            for (const child of el.children) {
-                if (isCenterLine(child.textContent)) return;
-            }
-
-            matches.push(el);
-        });
-
+        walk(document);
         return matches;
     }
 
     function findCenterLineText() {
+        if (isConnectedNode(cachedCenterLineEl)) {
+            const cachedText = normalizeText(cachedCenterLineEl.textContent);
+
+            if (isCenterLine(cachedText) && cachedText.length <= 240) {
+                return cachedText;
+            }
+
+            cachedCenterLineEl = null;
+        }
+
         const matches = findCenterLineElements();
 
         if (!matches.length) return '';
@@ -3611,6 +3746,7 @@
 
         if (!bestEl) return '';
 
+        cachedCenterLineEl = bestEl;
         return normalizeText(bestEl.textContent);
     }
 
@@ -3899,6 +4035,10 @@
     }
 
     function overviewDocuments() {
+        if (!pageScanDirty && cachedOverviewDocs && cachedOverviewDocs.length) {
+            return cachedOverviewDocs;
+        }
+
         const docs = [];
         const seen = new Set();
 
@@ -3908,11 +4048,7 @@
             seen.add(doc);
             docs.push(doc);
 
-            walkDom(doc, el => {
-                if (!el.tagName || el.tagName.toLowerCase() !== 'iframe') {
-                    return;
-                }
-
+            collectDeepByQuery(doc, 'iframe', []).forEach(el => {
                 try {
                     if (el.contentDocument) add(el.contentDocument);
                 } catch (err) {}
@@ -3920,6 +4056,7 @@
         }
 
         add(document);
+        cachedOverviewDocs = docs;
         return docs;
     }
 
@@ -4179,10 +4316,22 @@
 
     // Cheap invalidation only: href, table counts, and text length.
     // This does not parse fraction totals.
+    function cheapTextHash(text) {
+        const value = String(text || '');
+        let hash = 0;
+
+        for (let i = 0; i < value.length; i++) {
+            hash = (hash * 33 + value.charCodeAt(i)) | 0;
+        }
+
+        return hash + ':' + value.length;
+    }
+
     function cheapOverviewTextSignature() {
         let href = '';
         let tables = 0;
         let length = 0;
+        let hash = 0;
 
         try {
             href = typeof location !== 'undefined' && location.href
@@ -4201,7 +4350,9 @@
                     tables += list.length;
 
                     for (let i = 0; i < list.length; i++) {
-                        length += (list[i].textContent || '').length;
+                        const text = list[i].textContent || '';
+                        length += text.length;
+                        hash ^= cheapTextHash(text);
                     }
                 }
 
@@ -4213,13 +4364,17 @@
                     for (let i = 0; i < hosts.length; i++) {
                         const shadow = hosts[i].shadowRoot;
 
-                        if (shadow) length += (shadow.textContent || '').length;
+                        if (shadow) {
+                            const text = shadow.textContent || '';
+                            length += text.length;
+                            hash ^= cheapTextHash(text);
+                        }
                     }
                 }
             });
         } catch (err) {}
 
-        return href + ':' + tables + ':' + length;
+        return href + ':' + tables + ':' + length + ':' + hash;
     }
 
     function grayFractionPageSignature(selects) {
@@ -5824,6 +5979,11 @@
 
         if (!box) return;
 
+        const key = box.left + ',' + box.top + ',' + box.width + ',' + box.height;
+
+        if (key === lastSiteFrameKey) return;
+
+        lastSiteFrameKey = key;
         siteFrame.style.left = box.left + 'px';
         siteFrame.style.top = box.top + 'px';
         siteFrame.style.width = box.width + 'px';
@@ -6000,6 +6160,7 @@
     }
 
     function applyPatientSiteGray(site) {
+        lastAppliedSite = site;
         if (panel) panel.dataset.patientSite = site;
         if (!helpList) return;
 
@@ -6016,15 +6177,69 @@
 
     let applyingSiteGray = false;
 
+    function cheapIdleSignature() {
+        let patientId = '';
+
+        try {
+            const sidebar = findPatientsSidebar();
+            patientId = sidebar ? String(sidebar.getAttribute('currentpatientid') || '') : '';
+        } catch (err) {}
+
+        let href = '';
+
+        try {
+            href = typeof location !== 'undefined' && location.href
+                ? String(location.href)
+                : '';
+        } catch (err) {}
+
+        const selects = getTemplateSelects();
+        let center = '';
+
+        if (isConnectedNode(cachedCenterLineEl)) {
+            try {
+                center = normalizeText(cachedCenterLineEl.textContent || '');
+            } catch (err) {}
+        }
+
+        return href
+            + '
+'
+            + patientId
+            + '
+'
+            + grayFractionSelectSignature(selects)
+            + '
+'
+            + String(selects.length)
+            + '
+'
+            + cheapOverviewTextSignature()
+            + '
+'
+            + center;
+    }
+
     function refreshPatientSiteGray() {
         if (applyingSiteGray) return;
 
         applyingSiteGray = true;
 
         try {
-            applyPatientSiteGray(detectPatientSite());
+            const signature = cheapIdleSignature();
+            const changed = signature !== cachedIdleSignature;
+            cachedIdleSignature = signature;
+
+            // Skip the heavy site / fraction / banner scans when the
+            // visible page state we care about has not changed, unless
+            // the site is still unknown and might appear shortly.
+            if (changed || lastAppliedSite == null || lastAppliedSite === 'unknown') {
+                applyPatientSiteGray(detectPatientSite());
+            }
+
             maybeAutoCopyPatientMrn();
             updateSiteFrame();
+            pageScanDirty = false;
         } finally {
             applyingSiteGray = false;
         }
@@ -6246,6 +6461,20 @@
             && !el.closest('#chartcheck-dom-copy');
     }
 
+    // One shared debounced observer path. The 800ms interval still
+    // calls refreshPatientSiteGray, which no-ops when nothing changed.
+    let siteGrayQueued = false;
+
+    function queueSiteGrayRefresh() {
+        if (applyingSiteGray || siteGrayQueued) return;
+
+        siteGrayQueued = true;
+        setTimeout(() => {
+            siteGrayQueued = false;
+            refreshPatientSiteGray();
+        }, SITE_GRAY_MUTATION_DEBOUNCE_MS);
+    }
+
     function startSiteGrayRefresh() {
         if (siteGrayRefreshStarted) return;
         if (!document.body) return;
@@ -6257,16 +6486,12 @@
 
         if (typeof MutationObserver !== 'function') return;
 
-        let queued = false;
         const observer = new MutationObserver(mutations => {
-            if (applyingSiteGray || queued) return;
+            if (applyingSiteGray || siteGrayQueued) return;
             if (!mutations.some(mutationIsOutsidePanel)) return;
 
-            queued = true;
-            setTimeout(() => {
-                queued = false;
-                refreshPatientSiteGray();
-            }, SITE_GRAY_MUTATION_DEBOUNCE_MS);
+            markPageScanDirty();
+            queueSiteGrayRefresh();
         });
 
         observer.observe(document.documentElement, {

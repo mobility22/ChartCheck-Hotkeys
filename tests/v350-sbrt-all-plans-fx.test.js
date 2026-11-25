@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.54', /@version\s+3\.54\b/.test(src));
-ok('no leftover 3.53', !/\b3\.53\b/.test(src));
+ok('@version 3.55', /@version\s+3\.55\b/.test(src));
+ok('no leftover 3.54', !/\b3\.54\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('gray-out helper was renamed to consider every plan', src.includes('function sbrtGrayFractionsFromPlans(') && !src.includes('function sbrtGrayFractionsFromUnselected('));
 ok('readTemplateGrayFractions uses the plan helper with a page-wide fallback', /function computeTemplateGrayFractions\([\s\S]*?sbrtGrayFractionsWithFallback\(match\.contexts, readTotalFractions\(\)\)/.test(src) && /function readTemplateGrayFractions\([\s\S]*?cachedGrayFractions\(grayFractionPageSignature\(selects\)/.test(src));
