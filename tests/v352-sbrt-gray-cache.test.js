@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.52', /@version\s+3\.52\b/.test(src));
-ok('no leftover 3.51', !/\b3\.51\b/.test(src));
+ok('@version 3.53', /@version\s+3\.53\b/.test(src));
+ok('no leftover 3.52', !/\b3\.52\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('interval refresh stays 800ms', src.includes('const SITE_GRAY_REFRESH_MS = 800') && src.includes('setInterval(refreshPatientSiteGray, SITE_GRAY_REFRESH_MS)'));
 ok('mutation refresh is debounced 250-400ms', /const SITE_GRAY_MUTATION_DEBOUNCE_MS = (25\d|3\d\d|400)\b/.test(src) && src.includes('SITE_GRAY_MUTATION_DEBOUNCE_MS)'));
