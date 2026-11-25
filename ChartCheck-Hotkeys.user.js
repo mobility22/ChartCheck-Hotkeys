@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.51
+// @version      3.52
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -3946,20 +3946,132 @@
         return fromPlans;
     }
 
-    function readTemplateGrayFractions() {
-        const selects = getTemplateSelects();
+    function grayFractionSelectSignature(selects) {
+        return (selects || []).map(select => {
+            if (!select) return '';
 
-        if (!selects.length) return readTotalFractions();
+            const value = select.value != null ? String(select.value) : '';
+            let text = '';
 
-        const scan = scanTemplateMatchPage(selects);
-        const plans = selects.map(select => describeTemplateSelect(select, scan));
+            try {
+                text = selectedTemplateText(select) || '';
+            } catch (err) {}
+
+            if (!text && select.options && select.selectedIndex >= 0) {
+                const option = select.options[select.selectedIndex];
+                text = option && option.text ? String(option.text) : '';
+            }
+
+            return value + '=' + text;
+        }).join(';');
+    }
+
+    // Cheap invalidation only: href, table counts, and text length.
+    // This does not parse fraction totals.
+    function cheapOverviewTextSignature() {
+        let href = '';
+        let tables = 0;
+        let length = 0;
+
+        try {
+            href = typeof location !== 'undefined' && location.href
+                ? String(location.href)
+                : '';
+        } catch (err) {}
+
+        try {
+            overviewDocuments().forEach(doc => {
+                const root = doc.body || doc.documentElement;
+
+                if (!root) return;
+
+                if (root.getElementsByTagName) {
+                    const list = root.getElementsByTagName('table');
+                    tables += list.length;
+
+                    for (let i = 0; i < list.length; i++) {
+                        length += (list[i].textContent || '').length;
+                    }
+                }
+
+                if (root.querySelectorAll) {
+                    const hosts = root.querySelectorAll(
+                        'rx-pass-state-table, weekly-plan-check-view'
+                    );
+
+                    for (let i = 0; i < hosts.length; i++) {
+                        const shadow = hosts[i].shadowRoot;
+
+                        if (shadow) length += (shadow.textContent || '').length;
+                    }
+                }
+            });
+        } catch (err) {}
+
+        return href + ':' + tables + ':' + length;
+    }
+
+    function grayFractionPageSignature(selects) {
+        const list = selects || [];
+
+        return grayFractionSelectSignature(list)
+            + '\n'
+            + String(list.length)
+            + '\n'
+            + cheapOverviewTextSignature();
+    }
+
+    let grayFractionCache = {
+        key: null,
+        value: null,
+        ready: false
+    };
+
+    function cachedGrayFractions(key, compute) {
+        if (grayFractionCache.ready && grayFractionCache.key === key) {
+            return grayFractionCache.value;
+        }
+
+        const value = typeof compute === 'function' ? compute() : compute;
+
+        grayFractionCache = {
+            key,
+            value,
+            ready: true
+        };
+
+        return value;
+    }
+
+    function computeTemplateGrayFractions(selects) {
+        const list = selects || [];
+
+        if (!list.length) return readTotalFractions();
+
+        const scan = scanTemplateMatchPage(list);
+        const plans = list.map(select => describeTemplateSelect(select, scan));
         const overviews = mergeOverviewPlanRows(scan.overviews, findOverviewPlanRecords());
         const tableCount = new Set(overviews.map(row => row && row.table).filter(Boolean)).size;
         const match = resolvePlanTemplateMatch(plans, overviews, {
             blocks: tableCount || (scan.counts.blocks != null ? scan.counts.blocks : 0)
         });
+        const fromPlans = sbrtGrayFractionsFromPlans(match.contexts);
+
+        // Skip the page-wide document scan unless the per-plan match
+        // has no known total and a single-plan fallback is allowed.
+        if (isKnownFractionTotal(fromPlans) || (match.contexts || []).length > 1) {
+            return sbrtGrayFractionsWithFallback(match.contexts, null);
+        }
 
         return sbrtGrayFractionsWithFallback(match.contexts, readTotalFractions());
+    }
+
+    function readTemplateGrayFractions() {
+        const selects = getTemplateSelects();
+
+        return cachedGrayFractions(grayFractionPageSignature(selects), function () {
+            return computeTemplateGrayFractions(selects);
+        });
     }
 
     function isTemplateHotkeyMuted(sitePair, isSbrt) {
@@ -5714,6 +5826,9 @@
 
     let siteGrayRefreshStarted = false;
 
+    const SITE_GRAY_REFRESH_MS = 800;
+    const SITE_GRAY_MUTATION_DEBOUNCE_MS = 300;
+
     function mutationIsOutsidePanel(mutation) {
         const node = mutation.target;
         const el = node && node.nodeType === 1
@@ -5722,7 +5837,8 @@
 
         if (!el || typeof el.closest !== 'function') return true;
 
-        return !el.closest('#chartcheck-panel');
+        return !el.closest('#chartcheck-panel')
+            && !el.closest('#chartcheck-dom-copy');
     }
 
     function startSiteGrayRefresh() {
@@ -5732,7 +5848,7 @@
         siteGrayRefreshStarted = true;
         createOverlay();
         refreshPatientSiteGray();
-        setInterval(refreshPatientSiteGray, 800);
+        setInterval(refreshPatientSiteGray, SITE_GRAY_REFRESH_MS);
 
         if (typeof MutationObserver !== 'function') return;
 
@@ -5745,7 +5861,7 @@
             setTimeout(() => {
                 queued = false;
                 refreshPatientSiteGray();
-            }, 150);
+            }, SITE_GRAY_MUTATION_DEBOUNCE_MS);
         });
 
         observer.observe(document.documentElement, {
