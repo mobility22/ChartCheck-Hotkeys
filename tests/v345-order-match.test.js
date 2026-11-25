@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.50', /@version\s+3\.50\b/.test(src));
-ok('no leftover 3.49', !/\b3\.49\b/.test(src));
+ok('@version 3.51', /@version\s+3\.51\b/.test(src));
+ok('no leftover 3.50', !/\b3\.50\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('document-order scan is used to pair selects with preceding labels', src.includes('function scanTemplateMatchPage(') && src.includes('function nearestPrecedingLabel(') && src.includes('function walkElementsInOrder('));
 ok('equal select and block counts map by document-order index', src.includes('list.length === rows.length') && src.includes('scan.overviews'));

@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.50', /@version\s+3\.50\b/.test(src));
-ok('no leftover 3.49', !/\b3\.49\b/.test(src));
+ok('@version 3.51', /@version\s+3\.51\b/.test(src));
+ok('no leftover 3.50', !/\b3\.50\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 
 ok('SBRT gray-out uses unselected-plan fractions', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTemplateGrayFractions\(\);/.test(src));
@@ -73,7 +73,7 @@ const twoPlanNamed = helpers.resolvePlanTemplateContexts(
         { planName: 'PlanB', totalFractions: 17 }
     ]
 );
-ok('filled PlanA is ignored and has no fraction decision', twoPlanNamed[0].filled === true && twoPlanNamed[0].totalFractions == null);
+ok('filled PlanA keeps its own table fx 3; Review still ignores it', twoPlanNamed[0].filled === true && twoPlanNamed[0].tableFound === true && twoPlanNamed[0].totalFractions === 3);
 ok('unselected PlanB uses its own table fx 17, not the first table fx 3', twoPlanNamed[1].tableFound === true && twoPlanNamed[1].totalFractions === 17);
 
 const namedDecision = helpers.templateReviewDecision('roseville', twoPlanNamed);

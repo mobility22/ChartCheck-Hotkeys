@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.50', /@version\s+3\.50\b/.test(src));
-ok('no leftover 3.49', !/\b3\.49\b/.test(src));
+ok('@version 3.51', /@version\s+3\.51\b/.test(src));
+ok('no leftover 3.50', !/\b3\.50\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('gray-out reads plan fractions from 3.48 matching', src.includes('function sbrtGrayFractionsFromPlans(') && src.includes('function readTemplateGrayFractions(') && src.includes('resolvePlanTemplateMatch('));
 ok('applyPatientSiteGray no longer uses the page-wide first fraction total', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTemplateGrayFractions\(\);/.test(src) && /function applyPatientSiteGray\([\s\S]*?readTotalFractions\(\);/.test(src) === false);

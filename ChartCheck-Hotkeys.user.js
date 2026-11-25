@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.50
+// @version      3.51
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -1272,11 +1272,12 @@
         );
     }
 
-    // Match an unselected template dropdown to a plan row:
-    // plan name first, then course title, then document-order
-    // index when dropdowns and rows line up, then remaining
-    // unselected dropdowns against leftover rows. Filled
-    // dropdowns are left untouched but can claim a row.
+    // Match a template dropdown to a plan row: plan name first,
+    // then course title, then document-order index when dropdowns
+    // and rows line up, then remaining unselected dropdowns
+    // against leftover rows. Filled dropdowns also receive the
+    // matched row's fractions so SBRT gray-out can use them.
+    // A single plan uses the only overview row when names miss.
     function resolvePlanTemplateMatch(plans, overviews, options) {
         const list = Array.isArray(plans) ? plans : [];
         const rows = Array.isArray(overviews) ? overviews : [];
@@ -1321,16 +1322,19 @@
         }
 
         const filledClaimed = list.map(() => false);
+        const assigned = list.map(() => null);
 
         list.forEach((plan, index) => {
             if (plan && plan.filled) {
-                if (matchByPlanName(plan) || matchByCourse(plan)) {
+                const row = matchByPlanName(plan) || matchByCourse(plan);
+
+                if (row) {
                     filledClaimed[index] = true;
+                    assigned[index] = row;
                 }
             }
         });
 
-        const assigned = list.map(() => null);
         let nameHits = 0;
 
         list.forEach((plan, index) => {
@@ -1369,12 +1373,17 @@
 
         if (list.length === rows.length) {
             list.forEach((plan, index) => {
-                if (plan && plan.filled) {
-                    used.add(index);
+                if (!plan || assigned[index]) return;
+
+                if (plan.filled) {
+                    if (rows[index] && !used.has(index)) {
+                        used.add(index);
+                        assigned[index] = rows[index];
+                    }
                     return;
                 }
 
-                if (!plan || plan.unselected === false || assigned[index]) return;
+                if (plan.unselected === false) return;
 
                 if (rows[index] && !used.has(index)) {
                     used.add(index);
@@ -1474,13 +1483,43 @@
             failed.push('near');
         }
 
+        // A single plan can use the only overview row, or the only
+        // unused row that already has a known total, even when the
+        // Check Template is already selected or names miss.
+        if (list.length === 1 && !assigned[0] && rows.length) {
+            const unused = [];
+
+            rows.forEach((row, index) => {
+                if (!used.has(index)) unused.push(row);
+            });
+
+            const known = unused.filter(row => (
+                row
+                && row.totalFractions != null
+                && Number.isFinite(row.totalFractions)
+                && row.totalFractions > 0
+            ));
+
+            if (known.length === 1) {
+                assigned[0] = claim(known[0]);
+            } else if (unused.length === 1) {
+                assigned[0] = claim(unused[0]);
+            } else if (rows.length === 1) {
+                assigned[0] = claim(rows[0]);
+            }
+        }
+
         const contexts = list.map((plan, index) => {
+            const row = assigned[index];
+
             if (plan && plan.filled) {
                 return {
                     filled: true,
                     unselected: false,
-                    tableFound: false,
-                    totalFractions: null
+                    tableFound: !!row,
+                    totalFractions: row && row.totalFractions != null
+                        ? row.totalFractions
+                        : null
                 };
             }
 
@@ -1490,12 +1529,12 @@
                 return {
                     filled: false,
                     unselected: false,
-                    tableFound: false,
-                    totalFractions: null
+                    tableFound: !!row,
+                    totalFractions: row && row.totalFractions != null
+                        ? row.totalFractions
+                        : null
                 };
             }
-
-            const row = assigned[index];
 
             if (!row) {
                 return {
@@ -3829,6 +3868,10 @@
     // Enable SBRT if any plan has known fx<=5, or if any plan's
     // fx is unknown. Mute SBRT only when every plan has a known
     // total greater than 5. Standard is never muted by fx.
+    function isKnownFractionTotal(value) {
+        return value != null && Number.isFinite(value) && value > 0;
+    }
+
     function sbrtGrayFractionsFromPlans(planStates) {
         const totals = [];
 
@@ -3885,10 +3928,28 @@
         return false;
     }
 
+    // If the per-plan match has no known total, use a page-wide
+    // Delivered / Total Fractions reading only when at most one
+    // plan is in play, so a longer first course cannot mask a
+    // different plan.
+    function sbrtGrayFractionsWithFallback(planStates, fallbackTotal) {
+        const fromPlans = sbrtGrayFractionsFromPlans(planStates);
+
+        if (isKnownFractionTotal(fromPlans)) return fromPlans;
+
+        const states = planStates || [];
+
+        if (states.length <= 1 && isKnownFractionTotal(fallbackTotal)) {
+            return fallbackTotal;
+        }
+
+        return fromPlans;
+    }
+
     function readTemplateGrayFractions() {
         const selects = getTemplateSelects();
 
-        if (!selects.length) return null;
+        if (!selects.length) return readTotalFractions();
 
         const scan = scanTemplateMatchPage(selects);
         const plans = selects.map(select => describeTemplateSelect(select, scan));
@@ -3898,7 +3959,7 @@
             blocks: tableCount || (scan.counts.blocks != null ? scan.counts.blocks : 0)
         });
 
-        return sbrtGrayFractionsFromPlans(match.contexts);
+        return sbrtGrayFractionsWithFallback(match.contexts, readTotalFractions());
     }
 
     function isTemplateHotkeyMuted(sitePair, isSbrt) {

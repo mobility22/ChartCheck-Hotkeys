@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.50', /@version\s+3\.50\b/.test(src));
-ok('no leftover 3.49', !/\b3\.49\b/.test(src));
+ok('@version 3.51', /@version\s+3\.51\b/.test(src));
+ok('no leftover 3.50', !/\b3\.50\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('overview blocks are deduped and expanded into plan rows', src.includes('function dedupeOverviewBlocks(') && src.includes('function extractPlanRowsFromCells(') && src.includes('function resolvePlanTemplateMatch('));
 ok('tooltip counts include unsel, rows, planLabels, matched, and fail stages', src.includes(" + ' unsel=' + countValue('unsel')") && src.includes(" + ' rows=' + countValue('rows')") && src.includes(" + ' planLabels=' + countValue('planLabels')") && src.includes(" + ' matched=' + countValue('matched')") && src.includes("text += ' fail=' +"));
@@ -106,7 +106,7 @@ const eightRows = plans.map((name, index) => ({
 }));
 
 const named = helpers.resolvePlanTemplateMatch(eightPlans, eightRows);
-ok('eight selects: only the unselected plan is matched by name to fx 17', named.contexts[7].tableFound === true && named.contexts[7].totalFractions === 17 && named.contexts.slice(0, 7).every(state => state.filled && !state.tableFound));
+ok('eight selects: filled plans keep their rows and the unselected plan matches fx 17', named.contexts[7].tableFound === true && named.contexts[7].totalFractions === 17 && named.contexts.slice(0, 7).every(state => state.filled && state.tableFound && state.totalFractions != null));
 ok('eight-select name match reports counts without names', named.stats.sel === 8 && named.stats.unsel === 1 && named.stats.rows === 8 && named.stats.matched === 1 && named.stats.fail === '');
 
 const auto = helpers.templateReviewDecision(

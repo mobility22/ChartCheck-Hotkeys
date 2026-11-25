@@ -10,11 +10,11 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.50', /@version\s+3\.50\b/.test(src));
-ok('no leftover 3.49', !/\b3\.49\b/.test(src));
+ok('@version 3.51', /@version\s+3\.51\b/.test(src));
+ok('no leftover 3.50', !/\b3\.50\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('gray-out helper was renamed to consider every plan', src.includes('function sbrtGrayFractionsFromPlans(') && !src.includes('function sbrtGrayFractionsFromUnselected('));
-ok('readTemplateGrayFractions uses the renamed helper', /function readTemplateGrayFractions\([\s\S]*?sbrtGrayFractionsFromPlans\(match\.contexts\)/.test(src));
+ok('readTemplateGrayFractions uses the plan helper with a page-wide fallback', /function readTemplateGrayFractions\([\s\S]*?sbrtGrayFractionsWithFallback\(match\.contexts, readTotalFractions\(\)\)/.test(src));
 ok('applyPatientSiteGray uses the same plan fraction source', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTemplateGrayFractions\(\);/.test(src));
 ok('template clicks use the same plan fraction source', /function isTemplateHotkeyMuted\([\s\S]*?readTemplateGrayFractions\(\)/.test(src));
 ok('filled or already-selected plans are no longer skipped', !/state\.filled \|\| state\.unselected === false/.test(src));
