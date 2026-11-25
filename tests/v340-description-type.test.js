@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.50', /@version\s+3\.50\b/.test(src));
-ok('no leftover 3.49', !/\b3\.49\b/.test(src));
+ok('@version 3.51', /@version\s+3\.51\b/.test(src));
+ok('no leftover 3.50', !/\b3\.50\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('row descriptions are 15px, matching the buttons', /#chartcheck-panel \.chartcheck-help-name\s*\{[\s\S]*?font-size:\s*15px;/.test(src));
 ok('grid button font stays 15px', /#chartcheck-panel \.chartcheck-help-btn\s*\{[\s\S]*?font-size:\s*15px;/.test(src));
