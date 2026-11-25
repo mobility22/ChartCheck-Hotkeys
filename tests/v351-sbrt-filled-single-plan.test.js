@@ -10,14 +10,14 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.53', /@version\s+3\.53\b/.test(src));
-ok('no leftover 3.52', !/\b3\.52\b/.test(src));
+ok('@version 3.54', /@version\s+3\.54\b/.test(src));
+ok('no leftover 3.53', !/\b3\.53\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('filled-plan contexts now keep the matched row fractions', /if \(plan && plan\.filled\) \{\s*return \{\s*filled: true,\s*unselected: false,\s*tableFound: !!row,/.test(src));
 ok('a single plan can use the only overview row', src.includes('A single plan can use the only overview row') && src.includes('function sbrtGrayFractionsWithFallback('));
 ok('gray-out falls back to the page-wide total for a single plan', /function computeTemplateGrayFractions\([\s\S]*?sbrtGrayFractionsWithFallback\(match\.contexts, readTotalFractions\(\)\)/.test(src));
 ok('applyPatientSiteGray still uses readTemplateGrayFractions', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTemplateGrayFractions\(\);/.test(src));
-ok('no selects still reads the page-wide total', /function computeTemplateGrayFractions\([\s\S]*?if \(!list\.length\) return readTotalFractions\(\);/.test(src));
+ok('no selects still reads the page-wide total', /function computeTemplateGrayFractions\([\s\S]*?if \(!list\.length\) \{[\s\S]*?readTotalFractions\(\)/.test(src) || /function computeTemplateGrayFractions\([\s\S]*?if \(!list\.length\) return readTotalFractions\(\);/.test(src));
 
 const helperStart = src.indexOf('    function isValidSiteTemplate(');
 const helperEnd = src.indexOf('    function checksNeedTemplatePrompt(');

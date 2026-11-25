@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.53
+// @version      3.54
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -1133,10 +1133,10 @@
                 continue;
             }
 
-            const joined = parseFractionPairTotal(row.join(' '));
+            const joined = parseAllFractionPairTotals(row.join(' '));
 
-            if (joined != null) {
-                totals.push(joined);
+            if (joined.length) {
+                joined.forEach(value => totals.push(value));
                 continue;
             }
 
@@ -2068,7 +2068,7 @@
         const parts = [];
 
         (headRows || []).forEach(row => {
-            const cells = tableRowCells(row);
+            const cells = tableRowCellSlots(row);
 
             if (!cells[index]) return;
 
@@ -2093,7 +2093,7 @@
         let max = 0;
 
         headRows.forEach(row => {
-            const count = tableRowCells(row).length;
+            const count = tableRowCellSlots(row).length;
 
             if (count > max) max = count;
         });
@@ -2101,13 +2101,22 @@
         for (let i = 0; i < max; i++) {
             const combined = combinedHeaderCellText(headRows, i);
             const name = planNameFromHeaderCell(combined);
+            const prev = cols[cols.length - 1];
 
             if (name) {
+                if (prev && prev.planName === name && headerSlotSameCell(headRows, prev.index, i)) {
+                    continue;
+                }
+
                 cols.push({ index: i, planName: name });
                 continue;
             }
 
             if (isPlanNameLabel(combined) || /^plan\s*name\b/i.test(combined)) {
+                if (prev && !prev.planName && headerSlotSameCell(headRows, prev.index, i)) {
+                    continue;
+                }
+
                 cols.push({ index: i, planName: '' });
             }
         }
@@ -2131,12 +2140,103 @@
         return rows;
     }
 
-    function tableRowCells(tr) {
-        return Array.from((tr && tr.children) || []).filter(cell => {
-            const tag = (cell.tagName || '').toLowerCase();
+    function isTableCellElement(el) {
+        const tag = (el && el.tagName || '').toLowerCase();
 
-            return tag === 'th' || tag === 'td';
+        return tag === 'th' || tag === 'td';
+    }
+
+    function tableRowCells(tr) {
+        const direct = Array.from((tr && tr.children) || []).filter(isTableCellElement);
+
+        if (direct.length) return direct;
+
+        // Some overview grids wrap each cell, so td/th are not
+        // direct children of the row.
+        const nested = [];
+
+        function visit(node) {
+            if (!node) return;
+
+            const tag = (node.tagName || '').toLowerCase();
+
+            if (node !== tr && tag === 'table') return;
+
+            if (node !== tr && isTableCellElement(node)) {
+                nested.push(node);
+                return;
+            }
+
+            Array.from((node.children || [])).forEach(visit);
+        }
+
+        visit(tr);
+        return nested;
+    }
+
+    function cellColSpan(cell) {
+        if (!cell) return 1;
+
+        let raw = 1;
+
+        try {
+            if (cell.colSpan != null && cell.colSpan !== '') {
+                raw = cell.colSpan;
+            } else if (typeof cell.getAttribute === 'function') {
+                const attr = cell.getAttribute('colspan');
+
+                if (attr != null && attr !== '') raw = attr;
+            }
+        } catch (err) {}
+
+        const span = Number(raw);
+
+        return Number.isFinite(span) && span > 0 ? Math.floor(span) : 1;
+    }
+
+    // Visual column slots, repeating a cell for its colspan so a
+    // fractions value that spans an Rx/Plan pair lines up with
+    // the header columns.
+    function tableRowCellSlots(tr) {
+        const slots = [];
+
+        tableRowCells(tr).forEach(cell => {
+            const span = cellColSpan(cell);
+
+            for (let i = 0; i < span; i++) slots.push(cell);
         });
+
+        return slots;
+    }
+
+    function uniqueRowCellTexts(cells) {
+        const texts = [];
+        const seen = [];
+
+        (cells || []).forEach(cell => {
+            if (!cell || seen.indexOf(cell) >= 0) return;
+
+            seen.push(cell);
+            texts.push(collectDeepText(cell));
+        });
+
+        return texts;
+    }
+
+    function headerSlotSameCell(headRows, left, right) {
+        const rows = headRows || [];
+        let saw = false;
+
+        for (let i = 0; i < rows.length; i++) {
+            const slots = tableRowCellSlots(rows[i]);
+
+            if (!slots[left] && !slots[right]) continue;
+            if (slots[left] !== slots[right]) return false;
+
+            saw = true;
+        }
+
+        return saw;
     }
 
     function planNameFromHeaderCell(text) {
@@ -2329,7 +2429,7 @@
 
         if (!fracRow) return rows;
 
-        const cells = tableRowCells(fracRow);
+        const cells = tableRowCellSlots(fracRow);
 
         if (cols.length) {
             cols.forEach((col, offset) => {
@@ -2351,7 +2451,7 @@
         // No header names: still emit one row per N / M total in the
         // fractions row so two side-by-side plans are not collapsed
         // into a single unknown match.
-        const texts = cells.map(cell => collectDeepText(cell));
+        const texts = uniqueRowCellTexts(cells);
         const totals = readAllFractionTotalsFromCells(texts);
 
         totals.forEach((total, offset) => {
@@ -3579,10 +3679,10 @@
         return false;
     }
 
-    function parseFractionPairTotal(text) {
+    function parseAllFractionPairTotals(text) {
         const value = normalizeText(text).replace(/[／⁄|]/g, '/');
 
-        if (!value) return null;
+        if (!value) return [];
 
         const explicit = [];
         const implicit = [];
@@ -3616,10 +3716,14 @@
             else implicit.push(total);
         }
 
-        if (explicit.length) return explicit[explicit.length - 1];
-        if (implicit.length) return implicit[implicit.length - 1];
+        if (explicit.length) return explicit;
+        return implicit;
+    }
 
-        return null;
+    function parseFractionPairTotal(text) {
+        const all = parseAllFractionPairTotals(text);
+
+        return all.length ? all[all.length - 1] : null;
     }
 
     function loneFractionInteger(text) {
@@ -4150,10 +4254,175 @@
         return value;
     }
 
+    const GRAY_DEBUG_FLAG = 'cc_debug_gray';
+
+    function isGrayDebugEnabled() {
+        try {
+            if (typeof localStorage === 'undefined' || !localStorage) return false;
+
+            const value = localStorage.getItem(GRAY_DEBUG_FLAG);
+
+            return value === '1' || value === 'true';
+        } catch (err) {
+            return false;
+        }
+    }
+
+    // Counts only: totals and flags. Never log names, IDs, or page text.
+    function logGrayDebug(info) {
+        if (!isGrayDebugEnabled()) return;
+
+        const data = info || {};
+
+        try {
+            console.info('[ChartCheck] gray', {
+                selects: data.selects,
+                planCount: data.planCount,
+                planTotals: Array.isArray(data.planTotals) ? data.planTotals.slice() : [],
+                overviewTotals: Array.isArray(data.overviewTotals) ? data.overviewTotals.slice() : [],
+                usedOverviewFallback: !!data.usedOverviewFallback,
+                result: data.result
+            });
+        } catch (err) {}
+    }
+
+    function nearestFractionsRowElement(label) {
+        let node = label;
+
+        for (let i = 0; i < 12 && node; i++) {
+            const tag = (node.tagName || '').toLowerCase();
+
+            if (tag === 'tr') return node;
+
+            if (tag === 'table') {
+                return findFractionsBodyRow(node) || node;
+            }
+
+            try {
+                if (typeof node.getAttribute === 'function' && node.getAttribute('role') === 'row') {
+                    return node;
+                }
+            } catch (err) {}
+
+            node = typeof composedParent === 'function' ? composedParent(node) : (node.parentElement || node.parentNode);
+        }
+
+        return label && (label.parentElement || label.parentNode) ? (label.parentElement || label.parentNode) : label;
+    }
+
+    function readFractionTotalsFromRowElement(row) {
+        if (!row) return [];
+
+        const cells = tableRowCellSlots(row);
+        const fromCells = cells.length
+            ? readAllFractionTotalsFromCells(uniqueRowCellTexts(cells))
+            : [];
+
+        if (fromCells.length) return fromCells;
+
+        const inner = [];
+
+        try {
+            collectOverviewCells(row, inner);
+        } catch (err) {}
+
+        if (inner.length) {
+            const fromInner = readAllFractionTotalsFromCells(inner);
+
+            if (fromInner.length) return fromInner;
+        }
+
+        return parseAllFractionPairTotals(collectDeepText(row));
+    }
+
+    // Every N / M (or bare Rx integer) total in Delivered / Total
+    // Fractions rows, including shadow roots. Used when a per-plan
+    // match leaves any total unknown.
+    function readAllOverviewFractionTotals() {
+        const totals = [];
+        const seen = new Set();
+
+        function addFromRow(row) {
+            if (!row || seen.has(row)) return;
+
+            const found = readFractionTotalsFromRowElement(row);
+
+            if (!found.length) return;
+
+            seen.add(row);
+            found.forEach(value => {
+                if (isKnownFractionTotal(value)) totals.push(value);
+            });
+        }
+
+        overviewDocuments().forEach(doc => {
+            const root = doc.body || doc.documentElement || doc;
+
+            walkComposedTree(root, el => {
+                if (isInNavSidebar(el) || isInHotkeyPanel(el) || isInPatientsSidebar(el)) {
+                    return;
+                }
+
+                if ((el.tagName || '').toLowerCase() === 'table') {
+                    addFromRow(findFractionsBodyRow(el));
+                }
+            });
+
+            findSmallestFractionsLabelElements(root).forEach(label => {
+                const table = nearestOverviewTable(label);
+
+                if (table) {
+                    addFromRow(findFractionsBodyRow(table));
+                    return;
+                }
+
+                addFromRow(nearestFractionsRowElement(label));
+            });
+        });
+
+        return totals;
+    }
+
+    // Mute only when every found overview total is known and >5,
+    // and there are at least as many totals as plan selects.
+    function sbrtGrayFractionsFromOverviewTotals(totals, selectCount) {
+        const list = (totals || []).filter(isKnownFractionTotal);
+        const needed = Number(selectCount) || 0;
+
+        if (!list.length || list.length !== (totals || []).length) return null;
+        if (needed > 0 && list.length < needed) return null;
+        if (list.some(value => value <= 5)) return null;
+
+        return list[0];
+    }
+
+    function sbrtGrayFractionsWithOverviewFallback(planStates, fallbackTotal, overviewTotals, selectCount) {
+        const fromPlans = sbrtGrayFractionsWithFallback(planStates, fallbackTotal);
+
+        if (isKnownFractionTotal(fromPlans)) return fromPlans;
+
+        const fromOverview = sbrtGrayFractionsFromOverviewTotals(overviewTotals, selectCount);
+
+        return isKnownFractionTotal(fromOverview) ? fromOverview : fromPlans;
+    }
+
     function computeTemplateGrayFractions(selects) {
         const list = selects || [];
 
-        if (!list.length) return readTotalFractions();
+        if (!list.length) {
+            const none = readTotalFractions();
+
+            logGrayDebug({
+                selects: 0,
+                planCount: 0,
+                planTotals: [],
+                overviewTotals: [],
+                usedOverviewFallback: false,
+                result: none
+            });
+
+            return none;
+        }
 
         const scan = scanTemplateMatchPage(list);
         const plans = list.map(select => describeTemplateSelect(select, scan));
@@ -4166,11 +4435,40 @@
 
         // Skip the page-wide document scan unless the per-plan match
         // has no known total and a single-plan fallback is allowed.
+        let result;
+
         if (isKnownFractionTotal(fromPlans) || (match.contexts || []).length > 1) {
-            return sbrtGrayFractionsWithFallback(match.contexts, null);
+            result = sbrtGrayFractionsWithFallback(match.contexts, null);
+        } else {
+            result = sbrtGrayFractionsWithFallback(match.contexts, readTotalFractions());
         }
 
-        return sbrtGrayFractionsWithFallback(match.contexts, readTotalFractions());
+        let overviewTotals = [];
+        let usedOverviewFallback = false;
+
+        if (!isKnownFractionTotal(result)) {
+            overviewTotals = readAllOverviewFractionTotals();
+            result = sbrtGrayFractionsWithOverviewFallback(
+                match.contexts,
+                null,
+                overviewTotals,
+                list.length
+            );
+            usedOverviewFallback = isKnownFractionTotal(result);
+        }
+
+        logGrayDebug({
+            selects: list.length,
+            planCount: (match.contexts || []).length,
+            planTotals: (match.contexts || []).map(ctx => (
+                ctx && isKnownFractionTotal(ctx.totalFractions) ? ctx.totalFractions : null
+            )),
+            overviewTotals,
+            usedOverviewFallback,
+            result
+        });
+
+        return result;
     }
 
     function readTemplateGrayFractions() {

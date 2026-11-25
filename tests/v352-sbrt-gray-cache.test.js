@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.53', /@version\s+3\.53\b/.test(src));
-ok('no leftover 3.52', !/\b3\.52\b/.test(src));
+ok('@version 3.54', /@version\s+3\.54\b/.test(src));
+ok('no leftover 3.53', !/\b3\.53\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('interval refresh stays 800ms', src.includes('const SITE_GRAY_REFRESH_MS = 800') && src.includes('setInterval(refreshPatientSiteGray, SITE_GRAY_REFRESH_MS)'));
 ok('mutation refresh is debounced 250-400ms', /const SITE_GRAY_MUTATION_DEBOUNCE_MS = (25\d|3\d\d|400)\b/.test(src) && src.includes('SITE_GRAY_MUTATION_DEBOUNCE_MS)'));
@@ -22,7 +22,7 @@ ok('signature uses select values, plan count, and overview text length or URL', 
 ok('readTemplateGrayFractions reuses the cache', /function readTemplateGrayFractions\([\s\S]*?cachedGrayFractions\(grayFractionPageSignature\(selects\)/.test(src));
 ok('hotkey mute reuses the cached readTemplateGrayFractions', /function isTemplateHotkeyMuted\([\s\S]*?readTemplateGrayFractions\(\)/.test(src));
 ok('applyPatientSiteGray still uses readTemplateGrayFractions', /function applyPatientSiteGray\([\s\S]*?const totalFractions = readTemplateGrayFractions\(\);/.test(src));
-ok('page-wide scan runs only when the per-plan match has no known total', /function computeTemplateGrayFractions\([\s\S]*?if \(isKnownFractionTotal\(fromPlans\) \|\| \(match\.contexts \|\| \[\]\)\.length > 1\) \{\s*return sbrtGrayFractionsWithFallback\(match\.contexts, null\);/.test(src));
+ok('page-wide scan runs only when the per-plan match has no known total', /function computeTemplateGrayFractions\([\s\S]*?if \(isKnownFractionTotal\(fromPlans\) \|\| \(match\.contexts \|\| \[\]\)\.length > 1\) \{\s*(return|result =) sbrtGrayFractionsWithFallback\(match\.contexts, null\);/.test(src));
 ok('single-plan unknown still falls back to readTotalFractions', /function computeTemplateGrayFractions\([\s\S]*?sbrtGrayFractionsWithFallback\(match\.contexts, readTotalFractions\(\)\)/.test(src));
 
 const helperStart = src.indexOf('    function isValidSiteTemplate(');
