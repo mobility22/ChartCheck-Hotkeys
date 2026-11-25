@@ -20,8 +20,8 @@ function extract(label, start, end) {
     return src.slice(a, b);
 }
 
-ok('@version 3.53', /@version\s+3\.53\b/.test(src));
-ok('no leftover 3.52', !/\b3\.52\b/.test(src));
+ok('@version 3.54', /@version\s+3\.54\b/.test(src));
+ok('no leftover 3.53', !/\b3\.53\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('loaded log uses SCRIPT_VERSION', src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION} Loaded') || src.includes('ChartCheck Hotkeys v${SCRIPT_VERSION}'));
 ok('grants GM_getValue', /@grant\s+GM_getValue/.test(src));
@@ -58,7 +58,15 @@ ok('reviewApproveUntilFail resets autoReviewCount only', reviewApprove.includes(
 ok('reviewApproveUntilFail does not zero site counts', !/rosevilleReviewCount\s*=\s*0/.test(reviewApprove) && !/ranchoReviewCount\s*=\s*0/.test(reviewApprove));
 ok('reviewApproveUntilFail does not call resetPersistedSiteCounts', !reviewApprove.includes('resetPersistedSiteCounts'));
 
-ok('no daily or startup site-count auto-reset helper leftover', !src.includes('resetReviewCounts') && !/new Date|getDate\(|toDateString|localStorage/.test(src));
+ok('no daily or startup site-count auto-reset helper leftover', !src.includes('resetReviewCounts') && !/new Date|getDate\(|toDateString/.test(src));
+ok('localStorage is only used for the opt-in cc_debug_gray flag', (() => {
+    const start = src.indexOf('    function isGrayDebugEnabled(');
+    const end = src.indexOf('    function logGrayDebug(');
+    if (start < 0 || end <= start) return false;
+    const body = src.slice(start, end);
+    const elsewhere = src.slice(0, start) + src.slice(end);
+    return !elsewhere.includes('localStorage') && body.includes('localStorage.getItem(GRAY_DEBUG_FLAG)');
+})());
 ok('loads persisted counts at init', /\/\/ Init[\s\S]*loadSiteCounts\(\);[\s\S]*window\.addEventListener\('load'/.test(src));
 
 const buttonOrder = extract('buttonOrder', '        const buttonOrder = [', '        ];');
