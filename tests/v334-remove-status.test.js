@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.51', /@version\s+3\.51\b/.test(src));
-ok('no leftover 3.50', !/\b3\.50\b/.test(src));
+ok('@version 3.52', /@version\s+3\.52\b/.test(src));
+ok('no leftover 3.51', !/\b3\.51\b/.test(src));
 ok('debug status line element is gone', !src.includes('chartcheck-template-status') && !src.includes('templateStatus'));
 ok('debug status helpers are gone', !src.includes('updateTemplateStatusLine') && !src.includes('formatTemplateStatus') && !src.includes('siteStatusCode'));
 ok('debug status CSS is gone', !src.includes('chartcheck-template-status'));
@@ -22,7 +22,7 @@ ok('yellow site frame border unchanged', /#chartcheck-panel \.chartcheck-site-fr
 ok('SBRT mute still uses site-muted class', src.includes("row.classList.toggle('chartcheck-site-muted', mute)"));
 ok('applyPatientSiteGray still reads totals', /function applyPatientSiteGray\([\s\S]*?readTemplateGrayFractions\(\)/.test(src));
 ok('fraction row reader remains', src.includes('function readTotalFractionsFromCells(') && src.includes('function rowCellTextsFromLabel('));
-ok('refresh still starts after load and on DOM changes', src.includes('startSiteGrayRefresh') && src.includes('new MutationObserver') && src.includes('setInterval(refreshPatientSiteGray, 800)'));
+ok('refresh still starts after load and on DOM changes', src.includes('startSiteGrayRefresh') && src.includes('new MutationObserver') && src.includes('setInterval(refreshPatientSiteGray, SITE_GRAY_REFRESH_MS)') && src.includes('SITE_GRAY_REFRESH_MS = 800'));
 
 if (failed) {
     process.exitCode = 1;

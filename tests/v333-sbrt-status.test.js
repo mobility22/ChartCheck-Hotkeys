@@ -10,13 +10,13 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.51', /@version\s+3\.51\b/.test(src));
-ok('no leftover 3.50', !/\b3\.50\b/.test(src));
+ok('@version 3.52', /@version\s+3\.52\b/.test(src));
+ok('no leftover 3.51', !/\b3\.51\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('muted SBRT still uses chartcheck-site-muted on the row', src.includes("row.classList.toggle('chartcheck-site-muted', mute)"));
 ok('refresh starts if load already completed', src.includes("document.readyState === 'complete'") && src.includes('startSiteGrayRefresh()'));
 ok('refresh also starts on load and DOMContentLoaded', src.includes("document.addEventListener('DOMContentLoaded', startSiteGrayRefresh)") && src.includes("window.addEventListener('load', startSiteGrayRefresh)"));
-ok('MutationObserver re-evaluates outside the panel', src.includes('new MutationObserver') && src.includes('mutationIsOutsidePanel') && src.includes('setInterval(refreshPatientSiteGray, 800)'));
+ok('MutationObserver re-evaluates outside the panel', src.includes('new MutationObserver') && src.includes('mutationIsOutsidePanel') && src.includes('setInterval(refreshPatientSiteGray, SITE_GRAY_REFRESH_MS)') && src.includes('SITE_GRAY_REFRESH_MS = 800'));
 ok('deep text walks shadow roots', /function collectDeepText\([\s\S]*?if \(node\.shadowRoot\) visit\(node\.shadowRoot\)/.test(src));
 ok('fraction reader looks at same-origin iframes', src.includes('el.contentDocument') && src.includes('function overviewDocuments('));
 ok('sibling cells are used when ancestor text is not enough', src.includes('function readTotalFractionsFromCells(') && src.includes('function readTotalFractionsFromLabel('));
