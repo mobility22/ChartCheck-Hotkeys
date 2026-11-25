@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ChartCheck Hotkeys
-// @version      3.52
+// @version      3.53
 // @match        https://10.231.132.118/*
 // @grant        GM_info
 // @grant        GM_setClipboard
@@ -2028,6 +2028,93 @@
         return firstElementByTag(table, 'tr');
     }
 
+    function tableHeadRows(table) {
+        const rows = [];
+
+        if (!table) return rows;
+
+        const thead = firstElementByTag(table, 'thead');
+
+        if (thead) {
+            const kids = Array.from(thead.children || []);
+
+            for (let i = 0; i < kids.length; i++) {
+                if ((kids[i].tagName || '').toLowerCase() === 'tr') rows.push(kids[i]);
+            }
+
+            return rows;
+        }
+
+        const kids = Array.from(table.children || []);
+
+        for (let i = 0; i < kids.length; i++) {
+            const child = kids[i];
+            const tag = (child.tagName || '').toLowerCase();
+
+            if (tag === 'tbody' || tag === 'tfoot') break;
+            if (tag !== 'tr') continue;
+
+            const cells = tableRowCells(child);
+            const hasTh = cells.some(cell => (cell.tagName || '').toLowerCase() === 'th');
+
+            if (!hasTh && rows.length) break;
+            if (hasTh) rows.push(child);
+        }
+
+        return rows;
+    }
+
+    function combinedHeaderCellText(headRows, index) {
+        const parts = [];
+
+        (headRows || []).forEach(row => {
+            const cells = tableRowCells(row);
+
+            if (!cells[index]) return;
+
+            const text = collectDeepText(cells[index]);
+
+            if (text) parts.push(text);
+        });
+
+        return normalizeText(parts.join(' '));
+    }
+
+    // Read every thead row, not just the first. A title row or a
+    // "Plan name" label row often sits above the row that holds
+    // the plan names, and skipping those later rows used to miss
+    // a second plan in a side-by-side Rx/Plan table.
+    function readPlanColumnsFromTable(table) {
+        const headRows = tableHeadRows(table);
+        const cols = [];
+
+        if (!headRows.length) return cols;
+
+        let max = 0;
+
+        headRows.forEach(row => {
+            const count = tableRowCells(row).length;
+
+            if (count > max) max = count;
+        });
+
+        for (let i = 0; i < max; i++) {
+            const combined = combinedHeaderCellText(headRows, i);
+            const name = planNameFromHeaderCell(combined);
+
+            if (name) {
+                cols.push({ index: i, planName: name });
+                continue;
+            }
+
+            if (isPlanNameLabel(combined) || /^plan\s*name\b/i.test(combined)) {
+                cols.push({ index: i, planName: '' });
+            }
+        }
+
+        return cols;
+    }
+
     function tableBodyRows(table) {
         const rows = [];
 
@@ -2235,25 +2322,45 @@
     }
 
     function readPlanRowsFromOverviewTable(table, courseName, order) {
-        const headRow = tableHeadRow(table);
-        const cols = readPlanColumnsFromHeadRow(headRow);
+        const cols = readPlanColumnsFromTable(table);
         const fracRow = findFractionsBodyRow(table);
         const rows = [];
+        const start = order == null ? 0 : order;
 
-        if (!fracRow || !cols.length) return rows;
+        if (!fracRow) return rows;
 
         const cells = tableRowCells(fracRow);
 
-        cols.forEach((col, offset) => {
-            const cell = cells[col.index];
-            const total = cell ? parsePlanCellFractionTotal(collectDeepText(cell)) : null;
+        if (cols.length) {
+            cols.forEach((col, offset) => {
+                const cell = cells[col.index];
+                const total = cell ? parsePlanCellFractionTotal(collectDeepText(cell)) : null;
 
+                rows.push({
+                    courseName: courseName || '',
+                    planName: col.planName,
+                    totalFractions: total,
+                    table,
+                    order: start + offset
+                });
+            });
+
+            return rows;
+        }
+
+        // No header names: still emit one row per N / M total in the
+        // fractions row so two side-by-side plans are not collapsed
+        // into a single unknown match.
+        const texts = cells.map(cell => collectDeepText(cell));
+        const totals = readAllFractionTotalsFromCells(texts);
+
+        totals.forEach((total, offset) => {
             rows.push({
                 courseName: courseName || '',
-                planName: col.planName,
+                planName: '',
                 totalFractions: total,
                 table,
-                order: (order == null ? 0 : order) + offset
+                order: start + offset
             });
         });
 

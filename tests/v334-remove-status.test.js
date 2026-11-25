@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.52', /@version\s+3\.52\b/.test(src));
-ok('no leftover 3.51', !/\b3\.51\b/.test(src));
+ok('@version 3.53', /@version\s+3\.53\b/.test(src));
+ok('no leftover 3.52', !/\b3\.52\b/.test(src));
 ok('debug status line element is gone', !src.includes('chartcheck-template-status') && !src.includes('templateStatus'));
 ok('debug status helpers are gone', !src.includes('updateTemplateStatusLine') && !src.includes('formatTemplateStatus') && !src.includes('siteStatusCode'));
 ok('debug status CSS is gone', !src.includes('chartcheck-template-status'));

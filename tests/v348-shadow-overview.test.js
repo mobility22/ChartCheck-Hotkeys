@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.52', /@version\s+3\.52\b/.test(src));
-ok('no leftover 3.51', !/\b3\.51\b/.test(src));
+ok('@version 3.53', /@version\s+3\.53\b/.test(src));
+ok('no leftover 3.52', !/\b3\.52\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('overview tables are read from composed shadow trees', src.includes('function walkComposedTree(') && src.includes('function collectOverviewRowsFromRoot(') && src.includes('function readPlanRowsFromOverviewTable('));
 ok('3.46 row detection remains as a fallback', src.includes('function findOverviewPlanRecordsLegacy('));
