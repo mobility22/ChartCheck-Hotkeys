@@ -10,8 +10,8 @@ function ok(name, cond) {
     if (!cond) failed++;
 }
 
-ok('@version 3.54', /@version\s+3\.54\b/.test(src));
-ok('no leftover 3.53', !/\b3\.53\b/.test(src));
+ok('@version 3.55', /@version\s+3\.55\b/.test(src));
+ok('no leftover 3.54', !/\b3\.54\b/.test(src));
 ok('panel title uses SCRIPT_VERSION', src.includes("titleText.textContent = 'ChartCheck v' + SCRIPT_VERSION"));
 ok('overview columns are read from every header row', src.includes('function tableHeadRows(') && src.includes('function readPlanColumnsFromTable(') && src.includes('function combinedHeaderCellText('));
 ok('readPlanRowsFromOverviewTable uses the multi-row column reader', /function readPlanRowsFromOverviewTable\([\s\S]*?readPlanColumnsFromTable\(table\)/.test(src));
